@@ -22,6 +22,9 @@
 class MidiTransformer// : public juce::MessageListener
 {
 public:
+
+    MidiTransformer();
+
     class TFScriptEvent
     {
     public:
@@ -64,7 +67,7 @@ public:
 
     void InitScript(const char* luaFile);
     void SendMessage(const TFScriptEvent& msg);
-    static TFScriptEvent Convert(juce::MidiMessage& const m, int samplePos, int ObjId);
+    static TFScriptEvent Convert(juce::MidiMessage& const m, int samplePos, int ObjId = 0);
     static juce::MidiMessage Convert(TFScriptEvent& const m); 
     void AdvanceTime(long samples);
     int AdvanceToNextNotifyEvent();

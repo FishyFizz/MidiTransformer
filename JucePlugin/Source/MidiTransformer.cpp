@@ -154,7 +154,7 @@ void MidiTransformer::SendMessage(const TFScriptEvent& msg)
     if (SafeCall(4, 0) == 0) PostSafeCallSuccess();
 }
 
-MidiTransformer::TFScriptEvent MidiTransformer::Convert(juce::MidiMessage& const m, int samplePos, int ObjId = 0)
+MidiTransformer::TFScriptEvent MidiTransformer::Convert(juce::MidiMessage& const m, int samplePos, int ObjId )
 {
     if (m.isNoteOn())
         return TFScriptEvent{ TFScriptEvent::EvtType::NoteOnEvent,m.getNoteNumber(),m.getVelocity(), samplePos ,ObjId};
@@ -323,10 +323,6 @@ int MidiTransformer::RequestTimer(int samples, int valueToPass)
     TFScriptEvent e = TFScriptEvent{ TFScriptEvent::EvtType::TimerEvent,selectedID,valueToPass,samples};
     InsertToQueue(notifyQueue,e);
     return selectedID;
-}
-
-void MidiTransformer::LuaTryCall(int args, int results)
-{
 }
 
 MidiTransformer* MidiTransformer::RetrieveThisPointer(lua_State* l)

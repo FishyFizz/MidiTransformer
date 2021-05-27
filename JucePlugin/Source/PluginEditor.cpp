@@ -122,13 +122,12 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
             juce::File(),
             &wildcardFilter,
             nullptr);
-
+        browser.setRoot(juce::File("C:/ProgramData/MIDI Transformer/scripts/"));
         juce::FileChooserDialogBox dialogBox("Select Transform Script",
             "",
             browser,
             false,
             findColour(juce::TextEditor::ColourIds::backgroundColourId));
-        
         if (dialogBox.show())
         {
             juce::String filename = browser.getSelectedFile(0).getFullPathName();

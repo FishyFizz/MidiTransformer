@@ -14,6 +14,7 @@
 #include "../LUA/lauxlib.h"
 #include <list>
 #include <vector>
+#include <array>
 #include <algorithm>
 
 #pragma comment(lib,"../../lua/lua.lib")
@@ -29,7 +30,14 @@ public:
         int control;
         int value;
         int countdownSmpls;
+        int assignObjectId;
     };
+    std::array<int, 128> ActiveNoteIdTable;
+    short NoteIdAssign = 1;
+    short TimerIdAssign = 1;
+
+    short AssignId(short& Prev);
+
     std::list<TFScriptEvent> notifyQueue;
     std::list<TFScriptEvent> resultQueue;
 
@@ -56,15 +64,17 @@ public:
 
     void InitScript(const char* luaFile);
     void SendMessage(const TFScriptEvent& msg);
-    static TFScriptEvent Convert(juce::MidiMessage& const m, int samplePos);
+    static TFScriptEvent Convert(juce::MidiMessage& const m, int samplePos, int ObjId);
     static juce::MidiMessage Convert(TFScriptEvent& const m); 
     void AdvanceTime(long samples);
     int AdvanceToNextNotifyEvent();
     void InsertToQueue(std::list<TFScriptEvent>& queue, TFScriptEvent& const e);
 
-    short currTimerID = 1;
-
     //Callbacks and related utility for Lua
+    void PrepareSafeCall();
+    int SafeCall(int args, int rets);
+    void PostSafeCallSuccess();
+
     static MidiTransformer* RetrieveThisPointer(lua_State* l);
 
     static int RequestCallback_Static(lua_State* l);

@@ -14,6 +14,20 @@
 
 #define STR(x) (juce::String(x))
 
+short MidiTransformer::AssignId(short& Prev)
+{
+    short ret = Prev;
+    Prev++;
+    if (Prev == SHRT_MAX)
+        Prev = 1;
+    return Prev;
+}
+
+MidiTransformer::MidiTransformer()
+{
+    ActiveNoteIdTable.fill(0);
+}
+
 void MidiTransformer::processMidi(juce::MidiBuffer buf,int blockSize)
 {
     //====
@@ -55,6 +69,26 @@ void MidiTransformer::processMidi(juce::MidiBuffer buf,int blockSize)
         // the events added by script may be deleted, and the event shoul be deleted is left
         TFScriptEvent e = *notifyQueue.begin();
         notifyQueue.pop_front();
+        if (e.type == TFScriptEvent::EvtType::NoteOnEvent)
+        {
+            if (ActiveNoteIdTable[e.control]) //note currently active, this NoteOn event is duplicate. Ignore.
+                continue;
+            else
+            {
+                e.assignObjectId = AssignId(NoteIdAssign);
+                ActiveNoteIdTable[e.control] = e.assignObjectId;
+            }
+        }
+        else if (e.type == TFScriptEvent::EvtType::NoteOffEvent)
+        {
+            if (!ActiveNoteIdTable[e.control]) //note currently inactive, this NoteOff event is duplicate. Ignore.
+                continue;
+            else
+            {
+                e.assignObjectId = ActiveNoteIdTable[e.control];
+                ActiveNoteIdTable[e.control] = 0; //set note inactive
+            }
+        }
         SendMessage(e);
     }
     AdvanceTime(blockSize - samplesAdvanced);
@@ -85,8 +119,9 @@ void MidiTransformer::InitScript(const char* luaFile)
     luaL_openlibs(L);
     
     //Load transformer script
+    PrepareSafeCall();
     luaL_loadfile(L, luaFile);
-    lua_call(L, 0, 0);
+    if (SafeCall(0, 0) == 0) PostSafeCallSuccess();
 
 //  samplerate = [samplerate]
     lua_pushinteger(L, processingProperties.samplerate);
@@ -102,43 +137,32 @@ void MidiTransformer::InitScript(const char* luaFile)
     lua_register(L, "debug_message", DebugMessage_Static);
 
 //  void init_script()
+    PrepareSafeCall();
     lua_getglobal(L, "init_script");
-    lua_call(L, 0, 0);
+    if (SafeCall(0, 0) == 0) PostSafeCallSuccess();
 }
 
 void MidiTransformer::SendMessage(const TFScriptEvent& msg)
 {
 //  (void) message_income(msgtype, control, value)
-    lua_getglobal(L, "ShowVarStr");
+    PrepareSafeCall();
     lua_getglobal(L, "message_income");
     lua_pushinteger(L, msg.type);
     lua_pushinteger(L, msg.control);
     lua_pushinteger(L, msg.value);
-    if (lua_pcall(L, 3, 0, 0))
-    {
-        luaErrBypass = true;
-        lua_pushstring(L, "ErrorObj");
-        lua_call(L, 2, 1);
-        juce::String errmsg = lua_tostring(L, 1);
-        lua_pop(L, 1);
-        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", "Lua script failed!");
-        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", errmsg);
-    }
-    else
-    {
-        lua_pop(L, 1);
-    }
+    lua_pushinteger(L, msg.assignObjectId);
+    if (SafeCall(4, 0) == 0) PostSafeCallSuccess();
 }
 
-MidiTransformer::TFScriptEvent MidiTransformer::Convert(juce::MidiMessage& const m, int samplePos)
+MidiTransformer::TFScriptEvent MidiTransformer::Convert(juce::MidiMessage& const m, int samplePos, int ObjId = 0)
 {
     if (m.isNoteOn())
-        return TFScriptEvent{ TFScriptEvent::EvtType::NoteOnEvent,m.getNoteNumber(),m.getVelocity(), samplePos };
+        return TFScriptEvent{ TFScriptEvent::EvtType::NoteOnEvent,m.getNoteNumber(),m.getVelocity(), samplePos ,ObjId};
     else if (m.isNoteOff())
-        return TFScriptEvent{ TFScriptEvent::EvtType::NoteOffEvent,m.getNoteNumber(),m.getVelocity(), samplePos };
+        return TFScriptEvent{ TFScriptEvent::EvtType::NoteOffEvent,m.getNoteNumber(),m.getVelocity(), samplePos ,ObjId };
     else if (m.isController())
-        return TFScriptEvent{ TFScriptEvent::EvtType::MidiCCEvent,m.getControllerNumber(),m.getControllerValue(), samplePos };
-    return TFScriptEvent{ -1,0,0,0 };
+        return TFScriptEvent{ TFScriptEvent::EvtType::MidiCCEvent,m.getControllerNumber(),m.getControllerValue(), samplePos ,ObjId };
+    return TFScriptEvent{ -1,0,0,0 ,0};
 }
 
 juce::MidiMessage MidiTransformer::Convert(TFScriptEvent& const m)
@@ -159,9 +183,10 @@ void MidiTransformer::AdvanceTime(long samples)
 {
     advanceCounter += samples;
 //  void advance_time(samples)
+    PrepareSafeCall();
     lua_getglobal(L, "advance_time");
     lua_pushinteger(L, samples);
-    lua_call(L, 1, 0);
+    if (SafeCall(1, 0) == 0) PostSafeCallSuccess();
 
     for (TFScriptEvent& e : notifyQueue) e.countdownSmpls -= samples;
     for (TFScriptEvent& e : resultQueue) e.countdownSmpls -= samples;
@@ -216,6 +241,32 @@ void MidiTransformer::InsertToQueue(std::list<TFScriptEvent>& queue,TFScriptEven
     queue.push_back(e);
 }
 
+void MidiTransformer::PrepareSafeCall()
+{
+    lua_getglobal(L, "ShowVarStr");
+}
+
+int MidiTransformer::SafeCall(int args, int rets)
+{
+    int err = lua_pcall(L, args, rets, 0);
+    if (err)
+    {
+        luaErrBypass = true;
+        lua_pushstring(L, "ErrorObj");
+        lua_call(L, 2, 1);
+        juce::String errmsg = lua_tostring(L, 1);
+        lua_pop(L, 1); //Stack cleared
+        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", "Lua script failed!");
+        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", errmsg);
+    }
+    return err;
+}
+
+void MidiTransformer::PostSafeCallSuccess()
+{
+    lua_pop(L, 1);
+}
+
 // void post_message(pthis,type,control,value,offset)
 int MidiTransformer::PostMessage_Static(lua_State* l)
  {
@@ -268,12 +319,14 @@ void MidiTransformer::AddDebugOutputScript(juce::String& const str)
 int MidiTransformer::RequestTimer(int samples, int valueToPass)
 {
     AddDebugOutputHost("request timer for "+STR(samples)+" samples");
-    int selectedID = currTimerID;
-    currTimerID++;
-    if (currTimerID < 1) currTimerID++;
+    int selectedID = AssignId(TimerIdAssign);
     TFScriptEvent e = TFScriptEvent{ TFScriptEvent::EvtType::TimerEvent,selectedID,valueToPass,samples};
     InsertToQueue(notifyQueue,e);
     return selectedID;
+}
+
+void MidiTransformer::LuaTryCall(int args, int results)
+{
 }
 
 MidiTransformer* MidiTransformer::RetrieveThisPointer(lua_State* l)

@@ -295,15 +295,15 @@ function message_income(msgtype,control,value,assignid)
 			Type = TimerType.length
 		}
 		LastNote = assignid
-		DebugMessage(GetNoteName(control),"\tON ","Timer: ",TimersList[NotesList[assignid].AssociatedTimer].TimerID)
+		DebugMessage(GetNoteName(control),"\tON ","Timer: ",TimersList[NotesList[assignid].AssociatedTimer].TimerID, "NoteID = ",assignid)
 		--DebugMessage("Stored note : ",NotesList[control])
 	elseif msgtype == TIMER then
 		DebugMessage("timer hit : ",control)
 		local timer = TimersList[control]
-		local currNoteId = timer.AssociatedNote
 		if timer == nil then
 			--DebugMessage("timer already abandoned, do nothing")
 		else
+			local currNoteId = timer.AssociatedNote
 			TimersList[control] = nil
 			DebugMessage("timer removed.")
 
@@ -409,7 +409,8 @@ function message_income(msgtype,control,value,assignid)
 				end
 			--ExitLegatoState process
 			elseif timer.Type == TimerType.tolerance then
-				if NotesList[currNoteId] ~= nil and NotesList[currNoteId].LegatoLive then
+				DebugMessage("ToleranceTimer , noteid = ",currNoteId)
+				if NotesList[currNoteId] ~= nil then
 					NotesList[currNoteId].LegatoLive = false;
 					NotesList[currNoteId].ToleranceState = false;
 					DebugMessage(GetNoteName(NotesList[currNoteId].NoteNum)," TOLERANCE STATE END, EXIT LEGATO STATE")
@@ -466,7 +467,7 @@ function message_income(msgtype,control,value,assignid)
 				local tid = NewTimer(trs_lgt_continue+trs_short,assignid)
 				NotesList[assignid].ToleranceTimer = tid
 				TimersList[tid] = {
-					AssociatedNote = control,
+					AssociatedNote = control, --MODIFY THIS TO CURRENT ACTIVE NOTE OF THIS PITCH
 					TimerID = tid,
 					ValuePassed = control,
 					Type = TimerType.tolerance

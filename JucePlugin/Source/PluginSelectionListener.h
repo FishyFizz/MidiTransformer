@@ -22,6 +22,7 @@ public:
         {
             Window->escapeKeyPressed();
             delete AssociatedComponent;
+            AssociatedComponent = nullptr;
         }     
     }
 };

@@ -61,7 +61,10 @@ JucePluginAudioProcessorEditor::JucePluginAudioProcessorEditor (JucePluginAudioP
 JucePluginAudioProcessorEditor::~JucePluginAudioProcessorEditor()
 {
     if (pluginWindow)
+    {
+        pluginWindow = nullptr;
         delete pluginWindow;
+    }
 }
 
 //==============================================================================
@@ -202,7 +205,13 @@ void JucePluginAudioProcessorEditor::handleCommandMessage(int commandId)
     else if (commandId == 2)
     {
         if (pluginWindow)
+        {
             delete pluginWindow;
+            pluginWindow = nullptr;
+        }
+            
+        myprocessor->csWaitEditorThread.enter();
+        myprocessor->csWaitEditorThread.exit();
     }
     else if (commandId == 3)
     {
@@ -225,7 +234,11 @@ void JucePluginAudioProcessorEditor::initializePluginWindow()
     if (!myprocessor->pluginLoaded)
         return;
     if (pluginWindow)
+    {
         delete pluginWindow;
+        pluginWindow = nullptr;
+    }
+        
     AudioProcessorEditor* e = myprocessor->hostedPlugin->createEditorIfNeeded();
     auto tmp = new juce::DialogWindow("Hosted Plugin", juce::Colour(100, 100, 100), false, false);
     tmp->setContentComponent(e, true, true);
@@ -241,4 +254,9 @@ void JucePluginAudioProcessorEditor::MinimisationStateChanged(bool state)
 {
     if (pluginWindow)
         pluginWindow->minimisationStateChanged(state);
+}
+
+void JucePluginAudioProcessorEditor::ProcessorWait()
+{
+    myprocessor->csWaitEditorThread.enter();
 }

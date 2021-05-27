@@ -147,28 +147,94 @@ bool JucePluginAudioProcessor::hasEditor() const
 //==============================================================================
 void JucePluginAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    juce::MemoryOutputStream stream;
+
+    //basic info
+    stream.writeBool(autoBypass);
+    stream.writeBool(debugOutputEnabled);
+    stream.writeBool(bypassed);
+
+    //script info
+    stream.writeBool(scriptInitialized);
+    if (scriptInitialized)
+    {
+        stream.writeString(scriptFileName);
+    }
+
+    //plugin info
+    stream.writeBool(pluginLoaded && hostedPlugin);
+    if (pluginLoaded && hostedPlugin)
+    {
+        juce::MemoryBlock d;
+        hostedPlugin->getStateInformation(d);
+
+        stream.writeString(desc.createXml()->toString());
+        stream.writeString(desc.createIdentifierString());
+        stream.writeInt64(d.getSize());
+        stream.write(d.getData(), d.getSize());
+
+        //hostedPlugin->setStateInformation(d.getData(), d.getSize());
+    } 
+
+    destData.replaceWith(stream.getData(), stream.getDataSize());
 }
 
 void JucePluginAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    juce::MemoryInputStream stream(data,sizeInBytes,true);
+
+    //basic info
+    setAutoBypass(stream.readBool());
+    debugOutputEnabled = stream.readBool();
+    setBypassed(stream.readBool());
+
+    //script info
+    bool loadScriptInfo = stream.readBool();
+    if (loadScriptInfo)
+    {
+        scriptFileName = stream.readString();
+        initScript(scriptFileName);
+    }
+
+    //plugin info
+    bool loadPluginInfo = stream.readBool();
+    if (loadPluginInfo)
+    {
+        juce::String descXml, descIdentifier;
+        juce::int64 pluginChunkSize;
+
+        descXml = stream.readString();
+        descIdentifier = stream.readString();
+        pluginChunkSize = stream.readInt64();
+
+        void* pluginChunk = calloc(1, pluginChunkSize);
+        stream.read(pluginChunk, pluginChunkSize);
+
+        desc.loadFromXml(*(juce::XmlDocument(descXml).getDocumentElement(false)));
+        initPlugin(desc, pluginChunk, pluginChunkSize);
+        free(pluginChunk);
+    }
 }
 
 //CUSTOMIZED====================================================================
 
-bool JucePluginAudioProcessor::initPlugin(juce::PluginDescription& const desc)
+bool JucePluginAudioProcessor::initPlugin(juce::PluginDescription& const desc, const void* PluginChunk, int PluginChunkSize)
 {
     if (pluginLoaded)
     {
         pluginLoaded = false;
+        if (JucePluginAudioProcessorEditor* e = (JucePluginAudioProcessorEditor*)getActiveEditor())
+        {
+            e->ProcessorWait();
+            e->postCommandMessage(2);
+            csWaitEditorThread.enter();
+            csWaitEditorThread.exit();
+
+            //wait for editor destruction
+        }
         hostedPlugin.release();
     }
         
-
     juce::VST3PluginFormat f3;
     hostedPlugin = f3.createInstanceFromDescription(desc, getSampleRate(), 512);
     if (!hostedPlugin)
@@ -176,10 +242,16 @@ bool JucePluginAudioProcessor::initPlugin(juce::PluginDescription& const desc)
         juce::VSTPluginFormat f;
         hostedPlugin = f.createInstanceFromDescription(desc, getSampleRate(), 512);
     }
-    if (!hostedPlugin)
-        return false;
-    if (auto e = getActiveEditor())
-        e->postCommandMessage(5);
+
+    if (hostedPlugin)
+    {
+        if (PluginChunk != nullptr)
+            hostedPlugin->setStateInformation(PluginChunk, PluginChunkSize);
+        if (auto e = createEditorIfNeeded())
+            e->postCommandMessage(5);
+        this->desc = desc;
+        pluginLoaded = true;
+    }
     return true;
 }
 
@@ -202,6 +274,7 @@ void JucePluginAudioProcessor::initScript(juce::String scriptfile = juce::String
     tf->processingProperties.samplerate = getSampleRate();
     tf->InitScript(scriptfile.toStdString().c_str());
     setScriptInitialized(true);
+    scriptFileName = scriptfile;
 }
 
 void JucePluginAudioProcessor::ReportLatency()

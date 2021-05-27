@@ -56,21 +56,29 @@ public:
 
     //CUSTOMIZED====================================================================
     std::unique_ptr<juce::AudioPluginInstance> hostedPlugin;
-    bool initPlugin(juce::PluginDescription& const desc);
+    bool initPlugin(juce::PluginDescription& const desc, const void* PluginChunk = nullptr, int PluginChunkSize = 0);
     void unloadPlugin();
-    bool pluginLoaded=false;
     MidiTransformer* tf;
     void initScript(juce::String scriptfile);
     juce::String debugOutput;
-    bool scriptInitialized = false;
-    bool debugOutputEnabled = true;
-    bool bypassed = false;
     void ReportLatency();
     void setBypassed(bool b);
     void setScriptInitialized(bool b);
     void luaFail();
-    bool autoBypass = true;
     void setAutoBypass(bool b);
+
+    juce::CriticalSection csWaitEditorThread;
+    //==============================================================================
+    bool scriptInitialized = false;
+    bool pluginLoaded = false;
+    bool autoBypass = true;
+    bool debugOutputEnabled = true;
+    bool bypassed = false;
+    juce::PluginDescription desc;
+    juce::String scriptFileName;
+
+    //Memory Block Writing Helpers==================================================
+
 #ifdef DEBUG
     long long debugCounter=0;
 #endif

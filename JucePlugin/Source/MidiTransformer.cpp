@@ -135,7 +135,7 @@ void MidiTransformer::InitScript(const char* luaFile)
     lua_register(L, "request_callback_timer", RequestCallback_Static);
     lua_register(L, "post_message", PostMessage_Static);
     lua_register(L, "debug_message", DebugMessage_Static);
-    lua_register(L, "get_active_noteid_pitch",GetActiveNoteIdByPitch);
+    lua_register(L, "get_active_noteid_pitch",GetActiveNoteIdByPitch_Static);
 
 //  void init_script()
     PrepareSafeCall();
@@ -337,7 +337,7 @@ MidiTransformer* MidiTransformer::RetrieveThisPointer(lua_State* l)
 
 int MidiTransformer::GetActiveNoteIdByPitch_Static(lua_State* l)
 {
-    int n = lua_gettop(l) //should be 2
+    int n = lua_gettop(l); //should be 2
     MidiTransformer* thisptr = RetrieveThisPointer(l);
     int pitch = lua_tointeger(l,2);
     int id = thisptr->GetActiveNoteIdByPitch(pitch);

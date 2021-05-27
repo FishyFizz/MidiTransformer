@@ -15,6 +15,8 @@ function init_framework()
 	end
 	function debug_message(thispointer,content)
 	end
+	function get_active_noteid_pitch(thispointer,content)
+	end
 	--============================================================================================
 	---------------------------------------------------------------------------------------------
 	--UTILITIES
@@ -100,6 +102,9 @@ function init_framework()
 	function PostMsg(type, control, value, offset)
 		post_message(thispointer,type,control,value,offset)
 	end
+	function GetActiveNoteIdByPitch(p)
+		return get_active_noteid_pitch(thispointer,p)
+	end
 end
 init_framework()
 ---------------------------------------------------------------------------------------------
@@ -122,6 +127,8 @@ function init_utils()
 	sfz_atk			=	40
 	sus_atk			=	45
 	mleg_atk		= 	60
+
+	lgt_release		=	80
 
 	keysw_lead      	=   10
 	short_uniform_len 	= 	150
@@ -415,7 +422,7 @@ function message_income(msgtype,control,value,assignid)
 					NotesList[currNoteId].ToleranceState = false;
 					DebugMessage(GetNoteName(NotesList[currNoteId].NoteNum)," TOLERANCE STATE END, EXIT LEGATO STATE")
 					DebugMessage("NOTE END TIME ==============",NotesList[currNoteId].NoteEndTime)
-					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,NotesList[currNoteId].NoteEndTime)
+					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,NotesList[currNoteId].NoteEndTime-MsSmps(lgt_release))
 					NotesList[currNoteId] = nil
 				else
 					DebugMessage("ALREADY removed, SKIP tolerance timer")
@@ -467,9 +474,9 @@ function message_income(msgtype,control,value,assignid)
 				local tid = NewTimer(trs_lgt_continue+trs_short,assignid)
 				NotesList[assignid].ToleranceTimer = tid
 				TimersList[tid] = {
-					AssociatedNote = control, --MODIFY THIS TO CURRENT ACTIVE NOTE OF THIS PITCH
+					AssociatedNote = assignid,
 					TimerID = tid,
-					ValuePassed = control,
+					ValuePassed = assignid,
 					Type = TimerType.tolerance
 				}
 				DebugMessage("Tolerance state timer added.")

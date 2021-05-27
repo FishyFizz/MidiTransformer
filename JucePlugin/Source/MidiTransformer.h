@@ -86,6 +86,9 @@ public:
     static int PostMessage_Static(lua_State* l);
     void PostMessage(int type, int control, int value,int offset);
 
+    static int GetActiveNoteIdByPitch_Static(lua_State* l);
+    int GetActiveNoteIdByPitch(int pitch);
+
     static int DebugMessage_Static(lua_State* l);
     void DebugMessage(const char* str);
     void AddDebugOutputHost(juce::String& const str);

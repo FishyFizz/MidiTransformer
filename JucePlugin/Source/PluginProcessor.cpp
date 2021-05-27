@@ -266,7 +266,7 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         {
             juce::AudioPlayHead::CurrentPositionInfo inf;
             ph->getCurrentPosition(inf);
-            setBypassed(inf.isPlaying);
+            setBypassed(!inf.isPlaying);
         }
     }
 

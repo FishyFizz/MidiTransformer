@@ -86,9 +86,11 @@ function init_framework()
 	function SmpsMs(smps)
 		return math.floor(smps*1000/samplerate)
 	end
+	
+	ksw_len		=	MsSmps(1)
 	function PostKeyEvt(notename,mark,oct,velo,offset) 
 		post_message(thispointer,NOTEON,GetMidiNoteNum(notename,mark,oct),velo,offset)
-		post_message(thispointer,NOTEOFF,GetMidiNoteNum(notename,mark,oct),velo,offset+MsSmps(100))
+		post_message(thispointer,NOTEOFF,GetMidiNoteNum(notename,mark,oct),velo,offset+ksw_len)
 	end
 	function PostControllerEvt(cc,val,offset)
 		post_message(thispointer,CONTROLLER,cc,val,offset)
@@ -114,19 +116,16 @@ init_framework()
 ---------------------------------------------------------------------------------------------
 function init_utils()
 	--Compensation Constants (in milliseconds)
-	lgt_fast 	= 	150
-	lgt_medium 	= 	255
-	lgt_gliss	=	255
-	lgt_atkmed	=	102
-	lgt_atkfast	=	60
-	lgt_slow    =   300
-	lgt_mleg		=	55
-	spicc_atk		=	80
-	stctsm_atk		=	80
-	stac_atk		=	65
-	sfz_atk			=	40
-	sus_atk			=	45
-	mleg_atk		= 	60
+	lgt_fast 	= 	156
+	lgt_medium 	= 	185
+	lgt_atkfast	=	50
+	lgt_mleg		=	101
+	spicc_atk		=	75
+	stctsm_atk		=	55
+	stac_atk		=	75
+	sfz_atk			=	70
+	sus_atk			=	70
+	mleg_atk		= 	70
 
 	lgt_release		=	80
 
@@ -136,7 +135,7 @@ function init_utils()
 	trs_lgt_continue = MsSmps(3)
 
 	lgt_overlap = 5
-	mlgt_overlap = 15
+	mlgt_overlap = 10
 
 	trs_stctsm	=	MsSmps(40)
 	trs_stac	= 	trs_stctsm*2
@@ -157,21 +156,11 @@ function init_utils()
 	end
 
 	function chk_vel_lgt_fast(vel)
-		return 100<vel
+		return 64<=vel
 	end
 	function chk_vel_lgt_medium(vel)
-		return 65<=vel and vel<=100
+		return vel<=63
 	end
-	function chk_vel_lgt_slow(vel)
-		return 20<vel and vel<65
-	end
-	function chk_vel_gliss(vel)
-		return vel<=20
-	end
-	function chk_vel_lgt_fastatk(vel)
-		return vel>100
-	end
-
 	---------------------------------------------------------------------------------------------
 	--Functions and States
 	function switch_to_spicc(eventoffset) 
@@ -356,10 +345,6 @@ function message_income(msgtype,control,value,assignid)
 								compensation = lgt_fast
 							elseif chk_vel_lgt_medium(NotesList[currNoteId].NoteVelo) then
 								compensation = lgt_medium
-							elseif chk_vel_lgt_slow(NotesList[currNoteId].NoteVelo) then
-								compensation = lgt_slow
-							elseif chk_vel_gliss(NotesList[currNoteId].NoteVelo) then
-								compensation = lgt_gliss
 							end
 						end
 

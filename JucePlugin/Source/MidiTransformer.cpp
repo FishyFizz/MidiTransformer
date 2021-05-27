@@ -107,6 +107,24 @@ void MidiTransformer::retrieveMidi(juce::MidiBuffer& mid,int blockSize)
             return;
         if (curr.type != curr.NewBlock && curr.type != curr.TimerEvent)
         {
+            if (curr.type == TFScriptEvent::EvtType::NoteOnEvent)
+            {
+                NoteOverlapCounter[curr.control]++;
+                if (NoteOverlapCounter[curr.control] > 1)
+                {
+                    mid.addEvent(Convert(curr), curr.countdownSmpls);
+                    curr.countdownSmpls++; //Note off (clip) at this sample, Note on at next sample.
+                }
+            }
+            else if (curr.type == TFScriptEvent::EvtType::NoteOffEvent)
+            {
+                NoteOverlapCounter[curr.control]--;
+                if (NoteOverlapCounter[curr.control]>0) //This NoteOff event was clipped. Don't send again.
+                {
+                    resultQueue.pop_front();
+                    continue;
+                }
+            }
             mid.addEvent(Convert(curr),curr.countdownSmpls);
             resultQueue.pop_front();
         }  

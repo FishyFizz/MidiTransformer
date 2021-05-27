@@ -10,7 +10,6 @@
 
 #pragma once
 #include <JuceHeader.h>
-#include "MidiTransformerNotifyMessage.h"
 #include "../LUA/lauxlib.h"
 #include <list>
 #include <vector>
@@ -36,6 +35,10 @@ public:
         int assignObjectId;
     };
     std::array<int, 128> ActiveNoteIdTable;
+
+    //Offers note trimming in a first-in-first-out method
+    std::array<int, 128> NoteOverlapCounter;
+
     short NoteIdAssign = 1;
     short TimerIdAssign = 1;
 

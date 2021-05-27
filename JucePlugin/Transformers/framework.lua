@@ -13,20 +13,52 @@ function init_framework()
 	end
 	function post_message(thispointer, type, control, value, offset)
 	end
+	function debug_message(thispointer,content)
+	end
+	function get_active_noteid_pitch(thispointer,content)
+	end
 	--============================================================================================
 	---------------------------------------------------------------------------------------------
 	--UTILITIES
 
 	debug = false
+	dbgout_tofile = false
 	function EnableDebug()
 		debug = true
+		if dbgout_tofile then
+			io.output(io.open("C:/Users/Fizz/Desktop/tfs.log","w"))
+		end
 	end
 	function DbgExec(LuaStr)
 		if debug then 
 			return load(LuaStr)()
 		end
 	end
-
+	function DebugMessage(...)
+		local t = {...}
+		local str = ''
+		for i,v in pairs(t) do
+			str = str..tostring(v)
+		end
+		if dbgout_tofile then
+			io.write(str,'\n')
+			io.flush()
+		end
+		debug_message(thispointer,str)
+	end
+	function ShowVarStr(var,varname)
+		local str = ''
+		if type(var) ~= 'table' then
+			str = str..varname..' = '..var
+			return str
+		else
+			str = str..varname..' = { '
+			for i,v in pairs(var) do
+				str = str..ShowVarStr(i,v)..' , '
+			end
+			return str..'}'
+		end
+	end
 	NOTEON = 0
 	NOTEOFF = 1
 	CONTROLLER = 2
@@ -36,9 +68,11 @@ function init_framework()
 	marks = {['#']=1,['b']=-1,[' ']=0}
 	noteNameTable = {'c','c#','d','d#','e','f','f#','g','g#','a','a#','b'}
 
-	function GetMidiNoteNum(name)
-		name = string.lower(name)
-		
+	function at(str,n)
+		return string.char(string.byte(str,n))
+	end
+	function EnableStringIndexing()
+		local mt = getmetatable(string)
 	end
 	function GetMidiNoteNum(name,sharpflat,octave)
 		return noteNumTable[name] + marks[sharpflat] + (octave*12+24)
@@ -54,7 +88,7 @@ function init_framework()
 	end
 	function PostKeyEvt(notename,mark,oct,velo,offset) 
 		post_message(thispointer,NOTEON,GetMidiNoteNum(notename,mark,oct),velo,offset)
-		post_message(thispointer,NOTEOFF,GetMidiNoteNum(notename,mark,oct),velo,offset)
+		post_message(thispointer,NOTEOFF,GetMidiNoteNum(notename,mark,oct),velo,offset+MsSmps(100))
 	end
 	function PostControllerEvt(cc,val,offset)
 		post_message(thispointer,CONTROLLER,cc,val,offset)
@@ -68,6 +102,9 @@ function init_framework()
 	function PostMsg(type, control, value, offset)
 		post_message(thispointer,type,control,value,offset)
 	end
+	function GetActiveNoteIdByPitch(p)
+		return get_active_noteid_pitch(thispointer,p)
+	end
 end
 init_framework()
 ---------------------------------------------------------------------------------------------
@@ -75,27 +112,12 @@ init_framework()
 ---------------------------------------------------------------------------------------------
 --CUSTOMIZABLE SECTION START=================================================================
 ---------------------------------------------------------------------------------------------
+
 function init_script()
-	init_utils()
-	EnableDebug()
-
-	DbgOut = function(...)end
-	DbgExec([[
-	f = io.open("D:/VST3DEBUG/TFS.log","w")
-	io.output(f)
-	DbgOut = function(...)
-		if debug then
-			io.write(...)
-			io.write(')
-			io.flush()
-		end
-	end
-	]])
-
-	DbgOut("Script Initialized. SR=",samplerate)
+	--PLACE CODE HERE
 end
 
-function message_income(msgtype,control,value)
+function message_income(msgtype,control,value,assignid)
 	--PLACE CODE HERE
 end
 

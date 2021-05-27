@@ -225,6 +225,11 @@ void JucePluginAudioProcessor::luaFail()
 {
 }
 
+void JucePluginAudioProcessor::setAutoBypass(bool b)
+{
+    autoBypass = b;
+}
+
 void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -254,6 +259,17 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
 
     //=====================================================================================
+    if (autoBypass)
+    {
+        juce::AudioPlayHead* ph = getPlayHead();
+        if (ph)
+        {
+            juce::AudioPlayHead::CurrentPositionInfo inf;
+            ph->getCurrentPosition(inf);
+            setBypassed(inf.isPlaying);
+        }
+    }
+
     int bufLen = buffer.getNumSamples();
     juce::MidiBuffer TransformedMidiMessage = midiMessages;
 

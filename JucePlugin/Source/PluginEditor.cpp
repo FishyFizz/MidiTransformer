@@ -50,6 +50,11 @@ JucePluginAudioProcessorEditor::JucePluginAudioProcessorEditor (JucePluginAudioP
     toggleBypassButton->setButtonText(myprocessor->bypassed?"Enable":"Bypass");
     addAndMakeVisible(toggleBypassButton);
 
+    autoBypassButton = new juce::TextButton;
+    autoBypassButton->addMouseListener(this, false);
+    autoBypassButton->setButtonText(myprocessor->autoBypass ? "NoAutoBps" : "AutoBypass");
+    addAndMakeVisible(autoBypassButton);
+
     initializePluginWindow();
 }
 
@@ -81,18 +86,18 @@ void JucePluginAudioProcessorEditor::resized()
     if(debugShow)
         debugShow->setBounds(b.first);
 
-    auto c = b.second.BisectL(b.second.w() / 2);
-    auto d = c.first.BisectL(c.first.w() / 2);
-    auto e = c.second.BisectL(c.second.w() / 2);
-
+    juce::Array<RectArranger> buttons;
+    buttons = b.second.EqualSplitHorizonal(5);
     if (selectPluginBtn)
-        selectPluginBtn->setBounds(d.first);
+        selectPluginBtn->setBounds(buttons[0]);
     if(selectScriptBtn)
-        selectScriptBtn->setBounds(d.second);
+        selectScriptBtn->setBounds(buttons[1]);
     if (toggleBypassButton)
-        toggleBypassButton->setBounds(e.first);
+        toggleBypassButton->setBounds(buttons[2]);
     if (toggleDbgBtn)
-        toggleDbgBtn->setBounds(e.second);
+        toggleDbgBtn->setBounds(buttons[3]);
+    if (autoBypassButton)
+        autoBypassButton->setBounds(buttons[4]);
     AudioProcessorEditor::resized();
 }
 
@@ -175,6 +180,11 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
     {
         myprocessor->setBypassed(!myprocessor->bypassed);
         toggleBypassButton->setButtonText(myprocessor->bypassed ? "Enable" : "Bypass");
+    }
+    else if (event.eventComponent == autoBypassButton)
+    {
+        myprocessor->setAutoBypass(!myprocessor->autoBypass);
+        autoBypassButton->setButtonText(myprocessor->autoBypass ? "NoAutoBps" : "AutoBypass");
     }
 }
 

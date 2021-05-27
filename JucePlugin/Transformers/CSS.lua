@@ -15,6 +15,8 @@ function init_framework()
 	end
 	function debug_message(thispointer,content)
 	end
+	function get_active_noteid_pitch(thispointer,content)
+	end
 	--============================================================================================
 	---------------------------------------------------------------------------------------------
 	--UTILITIES
@@ -44,7 +46,19 @@ function init_framework()
 		end
 		debug_message(thispointer,str)
 	end
-
+	function ShowVarStr(var,varname)
+		local str = ''
+		if type(var) ~= 'table' then
+			str = str..varname..' = '..var
+			return str
+		else
+			str = str..varname..' = { '
+			for i,v in pairs(var) do
+				str = str..ShowVarStr(i,v)..' , '
+			end
+			return str..'}'
+		end
+	end
 	NOTEON = 0
 	NOTEOFF = 1
 	CONTROLLER = 2
@@ -88,6 +102,9 @@ function init_framework()
 	function PostMsg(type, control, value, offset)
 		post_message(thispointer,type,control,value,offset)
 	end
+	function GetActiveNoteIdByPitch(p)
+		return get_active_noteid_pitch(thispointer,p)
+	end
 end
 init_framework()
 ---------------------------------------------------------------------------------------------
@@ -110,6 +127,8 @@ function init_utils()
 	sfz_atk			=	40
 	sus_atk			=	45
 	mleg_atk		= 	60
+
+	lgt_release		=	80
 
 	keysw_lead      	=   10
 	short_uniform_len 	= 	150
@@ -203,7 +222,7 @@ function init_utils()
 	}
 	TimerType = {length = 1, tolerance = 2}
 	
-	Note = {Type,NoteOnTime,OnTimeTransformed,NoteEndTime,EndTimeTransformed,LegatoLive,AssociatedTimer,NoteVelo,Prev,ToleranceState,ToleranceTimer}
+	Note = {Type,NoteOnTime,OnTimeTransformed,NoteEndTime,EndTimeTransformed,LegatoLive,AssociatedTimer,NoteVelo,Prev,ToleranceState,ToleranceTimer,NoteNum}
 	Timer = {AssociatedNote,TimerID,ValuePassed,Type}
 	
 	NotesList = {}
@@ -227,7 +246,7 @@ function init_script()
 	DebugMessage("Script Initialized. SR=",samplerate)
 end
 
-function message_income(msgtype,control,value)
+function message_income(msgtype,control,value,assignid)
 	DebugMessage("message_income,",msgtype,",",control,",",value)
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
@@ -262,7 +281,7 @@ function message_income(msgtype,control,value)
 		--Bypass all controllers other than switches
 		PostMsg(msgtype,control,value,0)
 	elseif msgtype == NOTEON then
-		NotesList[control] = {
+		NotesList[assignid] = {
 			Type = NoteType.pending,
 			NoteOnTime = 0,
 			OnTimeTransformed = nil,
@@ -272,17 +291,18 @@ function message_income(msgtype,control,value)
 			AssociatedTimer = NewTimer(trs_short,control),
 			NoteVelo = value,
 			Prev = LastNote,
-			ToleranceState = nil
+			ToleranceState = nil,
+			NoteNum = control
 		}
-		DebugMessage("Timer: ",NotesList[control].AssociatedTimer)
-		TimersList[NotesList[control].AssociatedTimer] ={
-			AssociatedNote = control,
-			TimerID = NotesList[control].AssociatedTimer,
-			ValuePassed = control,
+		DebugMessage("Timer: ",NotesList[assignid].AssociatedTimer)
+		TimersList[NotesList[assignid].AssociatedTimer] ={
+			AssociatedNote = assignid,
+			TimerID = NotesList[assignid].AssociatedTimer,
+			ValuePassed = assignid,
 			Type = TimerType.length
 		}
-		LastNote = control
-		DebugMessage(GetNoteName(control),"\tON ","Timer: ",TimersList[NotesList[control].AssociatedTimer].TimerID)
+		LastNote = assignid
+		DebugMessage(GetNoteName(control),"\tON ","Timer: ",TimersList[NotesList[assignid].AssociatedTimer].TimerID, "NoteID = ",assignid)
 		--DebugMessage("Stored note : ",NotesList[control])
 	elseif msgtype == TIMER then
 		DebugMessage("timer hit : ",control)
@@ -290,32 +310,33 @@ function message_income(msgtype,control,value)
 		if timer == nil then
 			--DebugMessage("timer already abandoned, do nothing")
 		else
+			local currNoteId = timer.AssociatedNote
 			TimersList[control] = nil
 			DebugMessage("timer removed.")
 
 			--Long note process
 			if timer.Type == TimerType.length then
-				DebugMessage("Note ",GetNoteName(value)," type -> [long.PENDING]")
-				NotesList[value].Type = NoteType.long.pending
+				DebugMessage("Note ",GetNoteName(NotesList[currNoteId].NoteNum)," type -> [long.PENDING]")
+				NotesList[currNoteId].Type = NoteType.long.pending
 
 				--Legato
 				if LegatoModeOn then
 					DebugMessage("Legato mode ON, type -> [long.legato.PENDING]")
-					DebugMessage("PREV = ",GetNoteName(NotesList[value].Prev))
-					NotesList[value].Type = NoteType.long.legato.pending
-					NotesList[value].LegatoLive = true
+					DebugMessage("PREV = ",GetNoteName(NotesList[currNoteId].Prev))
+					NotesList[currNoteId].Type = NoteType.long.legato.pending
+					NotesList[currNoteId].LegatoLive = true
 
 					--Determine if the legato note is START or FOLLOW
 					local isFollow = false
-					if NotesList[NotesList[value].Prev] == nil then
+					if NotesList[NotesList[currNoteId].Prev] == nil then
 						DebugMessage("Prev note REMOVED, type -> [long.legato.START]")
-						NotesList[value].Type = NoteType.long.legato.start
-					elseif NotesList[value].Prev == value then
+						NotesList[currNoteId].Type = NoteType.long.legato.start
+					elseif NotesList[currNoteId].Prev == value then
 						DebugMessage("Same note, type -> [long.legato.START]")
-						NotesList[value].Type = NoteType.long.legato.start
-					elseif NotesList[NotesList[value].Prev].LegatoLive then
-						DebugMessage("LEGATO FOLLOW ",GetNoteName(NotesList[value].Prev)," -> ",GetNoteName(value))
-						NotesList[value].Type = NoteType.long.legato.follow
+						NotesList[currNoteId].Type = NoteType.long.legato.start
+					elseif NotesList[NotesList[currNoteId].Prev].LegatoLive then
+						DebugMessage("LEGATO FOLLOW ",GetNoteName(NotesList[currNoteId].Prev)," -> ",GetNoteName(value))
+						NotesList[currNoteId].Type = NoteType.long.legato.follow
 						isFollow = true
 					end
 
@@ -331,29 +352,30 @@ function message_income(msgtype,control,value)
 							overlap = mlgt_overlap
 						else
 							overlap = lgt_overlap
-							if chk_vel_lgt_fast(NotesList[value].NoteVelo) then
+							if chk_vel_lgt_fast(NotesList[currNoteId].NoteVelo) then
 								compensation = lgt_fast
-							elseif chk_vel_lgt_medium(NotesList[value].NoteVelo) then
+							elseif chk_vel_lgt_medium(NotesList[currNoteId].NoteVelo) then
 								compensation = lgt_medium
-							elseif chk_vel_lgt_slow(NotesList[value].NoteVelo) then
+							elseif chk_vel_lgt_slow(NotesList[currNoteId].NoteVelo) then
 								compensation = lgt_slow
-							elseif chk_vel_gliss(NotesList[value].NoteVelo) then
+							elseif chk_vel_gliss(NotesList[currNoteId].NoteVelo) then
 								compensation = lgt_gliss
 							end
 						end
 
 						--Process Note
-						PostMsg(NOTEON,value,NotesList[value].NoteVelo,NotesList[value].NoteOnTime - MsSmps(compensation))
+						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
 						DebugMessage("LEGATO FOLLOW NOTE ON ",GetNoteName(value))
-						PostMsg(NOTEOFF,NotesList[value].Prev,64,NotesList[value].NoteOnTime - MsSmps(compensation) +MsSmps(5))
-						DebugMessage("TERMINATE PREV",GetNoteName(NotesList[value].Prev))
-						if NotesList[NotesList[value].Prev] ~= nil then
-							if NotesList[NotesList[value].Prev].ToleranceState == true then
+						PostMsg(NOTEOFF,NotesList[NotesList[currNoteId].Prev].NoteNum,64,NotesList[currNoteId].NoteOnTime - MsSmps(compensation) +MsSmps(overlap))
+						DebugMessage("TERMINATE PREV",GetNoteName(NotesList[NotesList[currNoteId].Prev].NoteNum))
+						if NotesList[NotesList[currNoteId].Prev] ~= nil then
+							if NotesList[NotesList[currNoteId].Prev].ToleranceState == true then
 								DebugMessage("PREV note in TOLERANCE STATE, REMOVE TIMER")
-								TimersList[NotesList[NotesList[value].Prev].ToleranceTimer] = nil
+								TimersList[NotesList[NotesList[currNoteId].Prev].ToleranceTimer] = nil
 							end
 						end							
-						NotesList[NotesList[value].Prev] = nil
+						NotesList[NotesList[currNoteId].Prev] = nil
+						DebugMessage("PREV note REMOVED")
 					--Process Start Note
 					else
 						local keySwFunc = nil
@@ -368,15 +390,15 @@ function message_income(msgtype,control,value)
 						end
 
 						--Process note
-						NotesList[value].Type = NoteType.long.legato.start
-						keySwFunc(NotesList[value].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
-						PostMsg(NOTEON,value,NotesList[value].NoteVelo,NotesList[value].NoteOnTime - MsSmps(compensation))
-						DebugMessage("LEGATO START NOTE ON ",GetNoteName(value))
+						NotesList[currNoteId].Type = NoteType.long.legato.start
+						keySwFunc(NotesList[currNoteId].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
+						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
+						DebugMessage("LEGATO START NOTE ON ",GetNoteName(NotesList[currNoteId].NoteNum))
 					end
 				--Sustain
 				else
 					DebugMessage("Legato mode OFF, type -> [long.SUSTAIN]")
-					NotesList[value].Type = NoteType.long.sustain
+					NotesList[currNoteId].Type = NoteType.long.sustain
 
 					local keySwFunc = nil
 					local compensation = 0
@@ -389,69 +411,72 @@ function message_income(msgtype,control,value)
 						compensation = sus_atk
 					end
 					--Process sustain note
-					keySwFunc(NotesList[value].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
-					PostMsg(NOTEON,value,NotesList[value].NoteVelo,NotesList[value].NoteOnTime - MsSmps(compensation))
+					keySwFunc(NotesList[currNoteId].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
+					PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
 				end
 			--ExitLegatoState process
 			elseif timer.Type == TimerType.tolerance then
-				if NotesList[timer.AssociatedNote] ~= nil then
-					NotesList[timer.AssociatedNote].LegatoLive = false;
-					NotesList[timer.AssociatedNote].ToleranceState = false;
-					DebugMessage(GetNoteName(timer.AssociatedNote)," TOLERANCE STATE END, EXIT LEGATO STATE")
-					PostMsg(NOTEOFF,timer.AssociatedNote,64,NotesList[timer.AssociatedNote].NoteEndTime)
+				DebugMessage("ToleranceTimer , noteid = ",currNoteId)
+				if NotesList[currNoteId] ~= nil then
+					NotesList[currNoteId].LegatoLive = false;
+					NotesList[currNoteId].ToleranceState = false;
+					DebugMessage(GetNoteName(NotesList[currNoteId].NoteNum)," TOLERANCE STATE END, EXIT LEGATO STATE")
+					DebugMessage("NOTE END TIME ==============",NotesList[currNoteId].NoteEndTime)
+					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,NotesList[currNoteId].NoteEndTime-MsSmps(lgt_release))
+					NotesList[currNoteId] = nil
 				else
-					DebugMessage(GetNoteName(timer.AssociatedNote)," ALREADY removed, SKIP tolerance timer")
+					DebugMessage("ALREADY removed, SKIP tolerance timer")
 				end
 			end
 		end
 	elseif msgtype == NOTEOFF then
-		if(NotesList[control] == nil) then
+		if(NotesList[assignid] == nil) then
 			DebugMessage("Note already removed, skip.")
 		else
-			DebugMessage("Note ",GetNoteName(control),"\tOFF , Stored note: ",NotesList[control])
-			NotesList[control].NoteEndTime = 0
-			if NotesList[control].Type == NoteType.pending then
-				TimersList[NotesList[control].AssociatedTimer] = nil
+			DebugMessage("Note ",GetNoteName(control),"\tOFF , Stored note: ",NotesList[assignid])
+			NotesList[assignid].NoteEndTime = 0
+			if NotesList[assignid].Type == NoteType.pending then
+				TimersList[NotesList[assignid].AssociatedTimer] = nil
 				DebugMessage("timer abandoned.")
-				NotesList[control].Type = NoteType.short
-				local noteLen = -NotesList[control].NoteOnTime
+				NotesList[assignid].Type = NoteType.short
+				local noteLen = -NotesList[assignid].NoteOnTime
 				DebugMessage("Note ",GetNoteName(control)," type -> short , length = ",noteLen)
 				local shortCorrection = 0
 				if chk_len_sfz(noteLen) then
 					--DebugMessage("length = ",noteLen," , type = [SFZ]")
 					shortCorrection = sfz_atk
-					switch_to_sfz(NotesList[control].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
+					switch_to_sfz(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
 				elseif chk_len_stac(noteLen) then
 					--DebugMessage("length = ",noteLen," , type = [STAC]")
 					shortCorrection = stac_atk
-					switch_to_stac(NotesList[control].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
+					switch_to_stac(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
 				elseif chk_len_stctsm(noteLen) then
 					--DebugMessage("length = ",noteLen," , type = [STCTSM]")
 					shortCorrection = stctsm_atk
-					switch_to_stctsm(NotesList[control].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
+					switch_to_stctsm(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
 				elseif chk_len_spicc(noteLen) then
 					--DebugMessage("length = ",noteLen," , type = [SPICC]")
 					shortCorrection = spicc_atk
-					switch_to_spicc(NotesList[control].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
+					switch_to_spicc(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
 				end
-				PostMsg(NOTEON,control,NotesList[control].NoteVelo,NotesList[control].NoteOnTime - MsSmps(shortCorrection))
-				PostMsg(NOTEOFF,control,64,NotesList[control].NoteOnTime - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+				PostMsg(NOTEON,control,NotesList[assignid].NoteVelo,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection))
+				PostMsg(NOTEOFF,control,64,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
 				DebugMessage("[SHORT] Note ",GetNoteName(control)," removed from list")
-				NotesList[control] = nil
-			elseif NotesList[control].Type == NoteType.long.sustain then
-				DebugMessage("Note ",GetNoteName(control)," [SUSTAIN] note off, length = ",-NotesList[control].NoteOnTime)
-				NotesList[control] = nil
+				NotesList[assignid] = nil
+			elseif NotesList[assignid].Type == NoteType.long.sustain then
+				DebugMessage("Note ",GetNoteName(control)," [SUSTAIN] note off, length = ",-NotesList[assignid].NoteOnTime)
+				NotesList[assignid] = nil
 				DebugMessage("Note ",GetNoteName(control)," removed from list")
 				PostMsg(NOTEOFF,control,value,0)
-			elseif NotesList[control].Type == NoteType.long.legato.start or NotesList[control].Type == NoteType.long.legato.follow then
+			elseif NotesList[assignid].Type == NoteType.long.legato.start or NotesList[assignid].Type == NoteType.long.legato.follow then
 				DebugMessage("Note ",GetNoteName(control)," [LEGATO] note off, enter TOLERANCE STATE")
-				NotesList[control].ToleranceState = true
-				local tid = NewTimer(trs_lgt_continue+trs_short,control)
-				NotesList[control].ToleranceTimer = tid
+				NotesList[assignid].ToleranceState = true
+				local tid = NewTimer(trs_lgt_continue+trs_short,assignid)
+				NotesList[assignid].ToleranceTimer = tid
 				TimersList[tid] = {
-					AssociatedNote = control,
+					AssociatedNote = assignid,
 					TimerID = tid,
-					ValuePassed = control,
+					ValuePassed = assignid,
 					Type = TimerType.tolerance
 				}
 				DebugMessage("Tolerance state timer added.")

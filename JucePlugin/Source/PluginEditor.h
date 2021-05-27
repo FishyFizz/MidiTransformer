@@ -31,6 +31,7 @@ public:
     juce::Button* selectPluginBtn = nullptr;
     juce::Button* toggleDbgBtn = nullptr;
     juce::Button* toggleBypassButton = nullptr;
+    juce::Button* autoBypassButton = nullptr;
     juce::String debugOutput;
     juce::DialogWindow* pluginWindow = nullptr;
     void mouseDoubleClick(const juce::MouseEvent& event);

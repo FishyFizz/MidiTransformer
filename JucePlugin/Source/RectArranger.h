@@ -20,6 +20,7 @@ public:
     juce::Rectangle<int> rect;
     RectArranger(juce::Rectangle<int>& const r) { rect = r; }
     RectArranger(int x, int y, int w, int h) { rect = juce::Rectangle<int>(x, y, w, h); }
+    RectArranger(){ rect = juce::Rectangle<int>(0, 0, 0, 0); }
     operator juce::Rectangle<int>() { return rect; }
 
     pair<RectArranger, RectArranger> BisectU(int pos)
@@ -41,6 +42,36 @@ public:
     pair<RectArranger, RectArranger> BisectR(int pos)
     {
         return BisectL(rect.getWidth() - pos);
+    }
+    juce::Array<RectArranger> EqualSplitHorizonal(int n)
+    {
+        if (n < 2) return { *this };
+        juce::Array<RectArranger> result;
+        int sizePerBlock = w() / n;
+        RectArranger arealeft = *this;
+        for (int i = 0; i < n - 1; i++)
+        {
+            auto p = arealeft.BisectL(sizePerBlock);
+            result.add(p.first);
+            arealeft = p.second;
+        }
+        result.add(arealeft);
+        return result;
+    }
+    juce::Array<RectArranger> EqualSplitVertical(int n)
+    {
+        if (n < 2) return { *this };
+        juce::Array<RectArranger> result;
+        int sizePerBlock = h() / n;
+        RectArranger arealeft = *this;
+        for (int i = 0; i < n - 1; i++)
+        {
+            auto p = arealeft.BisectU(sizePerBlock);
+            result.add(p.first);
+            arealeft = p.second;
+        }
+        result.add(arealeft);
+        return result;
     }
     int x() { return rect.getX(); }
     int y() { return rect.getY(); }

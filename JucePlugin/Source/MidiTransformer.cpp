@@ -242,6 +242,11 @@ void MidiTransformer::InsertToQueue(std::list<TFScriptEvent>& queue,TFScriptEven
     queue.push_back(e);
 }
 
+void MidiTransformer::setAutoBypass(bool b)
+{
+    autoBypassSwitch = b;
+}
+
 void MidiTransformer::PrepareSafeCall()
 {
     lua_getglobal(L, "ShowVarStr");

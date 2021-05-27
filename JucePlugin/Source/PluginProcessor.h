@@ -60,8 +60,6 @@ public:
     void unloadPlugin();
     bool pluginLoaded=false;
     MidiTransformer* tf;
-    void showHostedEditor(); 
-    void hideHostedEditor();
     void initScript(juce::String scriptfile);
     juce::String debugOutput;
     bool scriptInitialized = false;
@@ -71,6 +69,8 @@ public:
     void setBypassed(bool b);
     void setScriptInitialized(bool b);
     void luaFail();
+    bool autoBypass = true;
+    void setAutoBypass(bool b);
 #ifdef DEBUG
     long long debugCounter=0;
 #endif

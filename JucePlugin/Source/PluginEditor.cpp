@@ -46,6 +46,26 @@ JucePluginAudioProcessorEditor::JucePluginAudioProcessorEditor (JucePluginAudioP
     showPluginWindowToggleButton = AddButtonWithText<juce::ToggleButton>("show plugin");
     showPluginWindowToggleButton->setClickingTogglesState(false);
 
+    settingsButton = new juce::ImageButton("");
+    settingsButton->addMouseListener(this, false);
+    juce::MemoryBlock imagedata;
+    juce::File("C:/ProgramData/MIDI Transformer/assets/settingsicon.png").loadFileAsData(imagedata);
+    juce::Image image = juce::PNGImageFormat::loadFrom(imagedata.getData(), imagedata.getSize());
+    settingsButton->setImages(
+        false,
+        true,
+        true,
+        image,
+        1,
+        juce::Colour(juce::uint8(0), 0, 0, juce::uint8(0)),
+        juce::Image(),
+        1,
+        juce::Colour(juce::uint8(255), 255, 255, juce::uint8(50)),
+        juce::Image(),
+        1,
+        juce::Colour(juce::uint8(255), 255, 255, juce::uint8(50)));
+    addAndMakeVisible(settingsButton);
+
     initializePluginWindow();
     RefreshToggleButtonStates();
 }
@@ -78,8 +98,12 @@ void JucePluginAudioProcessorEditor::resized()
     if(debugShow)
         debugShow->setBounds(b.first);
 
+    auto c = b.second.BisectR(30);
+    if (settingsButton)
+        settingsButton->setBounds(c.second);
+
     juce::Array<RectArranger> buttons;
-    buttons = b.second.EqualSplitHorizonal(6);
+    buttons = c.first.EqualSplitHorizonal(6);
     if (selectPluginBtn)
         selectPluginBtn->setBounds(buttons[0]);
     if(selectScriptBtn)
@@ -157,6 +181,13 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
             postCommandMessage(2);
         else
             initializePluginWindow();
+    }
+    else if (event.eventComponent == settingsButton)
+    {
+        EditSearchPathWindow* dlg = new EditSearchPathWindow;
+        dlg->setBounds(dlg->getBounds().withCentre(getBounds().getCentre()+getScreenPosition()));
+        dlg->addToDesktop();
+        dlg->runModalLoop();
     }
 }
 

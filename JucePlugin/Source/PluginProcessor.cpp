@@ -408,6 +408,6 @@ JucePluginAudioProcessor::~JucePluginAudioProcessor()
 juce::AudioProcessorEditor* JucePluginAudioProcessor::createEditor()
 {
     auto e = new JucePluginAudioProcessorEditor(*this);
-    e->setBounds(0, 0, 500, 700);
+    e->setBounds(0, 0, 800, 800);
     return e;
 }

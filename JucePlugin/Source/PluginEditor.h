@@ -39,6 +39,33 @@ public:
         }
     };
 
+    class EditSearchPathWindow : public juce::DialogWindow
+    {
+    public:
+        juce::TextEditor* edt;
+        EditSearchPathWindow():DialogWindow("Edit plugin paths",juce::Colour(0,0,0),true,false)
+        {
+            juce::StringArray arr;
+            juce::File("C:/ProgramData/MIDI Transformer/searchpaths.txt").readLines(arr);
+
+            edt = new juce::TextEditor;
+            edt->setSize(600, 400);
+            edt->setMultiLine(true);
+            edt->setReturnKeyStartsNewLine(true);
+            edt->setText(arr.joinIntoString("\n"));
+            setContentComponent(edt,true,true);
+        }
+        void closeButtonPressed() override
+        {
+            juce::File("C:/ProgramData/MIDI Transformer/searchpaths.txt").replaceWithText(edt->getText());
+            delete this;
+        }
+        ~EditSearchPathWindow()
+        {
+            delete edt;
+        }
+    };
+
     PluginSelectWindow* psw;
     JucePluginAudioProcessorEditor(JucePluginAudioProcessor&);
     ~JucePluginAudioProcessorEditor() override;
@@ -54,6 +81,7 @@ public:
     juce::Button* toggleBypassButton = nullptr;
     juce::Button* autoBypassButton = nullptr;
     juce::Button* showPluginWindowToggleButton = nullptr;
+    juce::ImageButton* settingsButton = nullptr;
     juce::String debugOutput;
     HostedWindow* pluginWindow = nullptr;
     void mouseDoubleClick(const juce::MouseEvent& event);

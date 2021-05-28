@@ -413,8 +413,8 @@ function message_income(msgtype,control,value,assignid)
 
 						--Select legato transition length
 						local triageItem = Triage(legatoSpeedTriageTable,NotesList[currNoteId].NoteVelo)
-						local compensation = triageItem[1]
-						local overlap = triageItem[2]
+						local compensation = triageItem[2]
+						local overlap = triageItem[3]
 
 						--Process Note
 						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
@@ -433,8 +433,8 @@ function message_income(msgtype,control,value,assignid)
 					else
 						--Select attack compensation and keyswitch
 						local triageItem = Triage(legatoAttackTriageTable)
-						local compensation = triageItem[1]
-						local keySwFunc = triageItem[2]
+						local compensation = triageItem[2]
+						local keySwFunc = triageItem[3]
 						
 						--Process note
 						NotesList[currNoteId].Type = NoteType.long.legato.start
@@ -449,8 +449,8 @@ function message_income(msgtype,control,value,assignid)
 					
 					--Select technique and compensation
 					local triageItem = Triage(sustainTriageTable)
-					local compensation = triageItem[1]
-					local keySwFunc = triageItem[2]
+					local compensation = triageItem[2]
+					local keySwFunc = triageItem[3]
 					
 					--Process sustain note
 					keySwFunc((NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
@@ -486,12 +486,12 @@ function message_income(msgtype,control,value,assignid)
 				
 				--Select correction and keyswitch
 				local triageItem = Triage(shortNoteTriageTable, noteLen)
-				local shortCorrection = triageItem[1]
-				local keyswFunc = triageItem[2]
+				local shortCorrection = triageItem[2]
+				local keyswFunc = triageItem[3]
 
-				keyswFunc(NotesList[assignid].NoteOnTime -PlayheadPos- MsSmps(shortCorrection)-MsSmps(keysw_lead))
-				PostMsg(NOTEON,control,NotesList[assignid].NoteVelo,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection))
-				PostMsg(NOTEOFF,control,64,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+				keyswFunc(NotesList[assignid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
+				PostMsg(NOTEON,control,NotesList[assignid].NoteVelo,NotesList[assignid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
+				PostMsg(NOTEOFF,control,64,NotesList[assignid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
 				DebugMessage("[SHORT] Note ",GetNoteName(control)," removed from list")
 				NotesList[assignid] = nil
 			elseif NotesList[assignid].Type == NoteType.long.sustain then

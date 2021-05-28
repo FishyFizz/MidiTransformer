@@ -26,6 +26,7 @@ short MidiTransformer::AssignId(short& Prev)
 MidiTransformer::MidiTransformer()
 {
     ActiveNoteIdTable.fill(0);
+    NoteOverlapCounter.fill(0);
 }
 
 void MidiTransformer::processMidi(juce::MidiBuffer buf,int blockSize)
@@ -112,7 +113,9 @@ void MidiTransformer::retrieveMidi(juce::MidiBuffer& mid,int blockSize)
                 NoteOverlapCounter[curr.control]++;
                 if (NoteOverlapCounter[curr.control] > 1)
                 {
-                    mid.addEvent(Convert(curr), curr.countdownSmpls);
+                    TFScriptEvent clippingNoteOff = curr;
+                    clippingNoteOff.type = TFScriptEvent::EvtType::NoteOffEvent;
+                    mid.addEvent(Convert(clippingNoteOff), clippingNoteOff.countdownSmpls);
                     curr.countdownSmpls++; //Note off (clip) at this sample, Note on at next sample.
                 }
             }

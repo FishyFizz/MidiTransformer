@@ -350,7 +350,7 @@ void MidiTransformer::DebugMessage(const char* str)
 void MidiTransformer::AddDebugOutputHost(juce::String& const str)
 {
     if (!debugOutputEnabled) return;
-    debugMessages.add(STR("                   [host] ") + STR(str));
+    //debugMessages.add(STR("                   [host] ") + STR(str));
 }
 
 void MidiTransformer::AddDebugOutputScript(juce::String& const str)

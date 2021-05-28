@@ -49,6 +49,14 @@ function init_framework()
 		end
 		debug_message(thispointer,str)
 	end
+	function StrFormatLen(str,len)
+		local tmp = tostring(str)
+		if len ~= nil then
+			return tmp..string.rep(' ',math.max(len-#tmp,0))
+		else
+			return tmp
+		end
+	end
 	function ShowVarStr(var,varname)
 		local str = ''
 		if type(var) ~= 'table' then
@@ -80,8 +88,9 @@ function init_framework()
 	function GetMidiNoteNum(name,sharpflat,octave)
 		return noteNumTable[name] + marks[sharpflat] + (octave*12+24)
 	end
-	function GetNoteName(num)
-		return noteNameTable[(num%12+1)]..(math.floor(num/12)-2)
+	function GetNoteName(num, formatlen)
+		local tmp = noteNameTable[(num%12+1)]..(math.floor(num/12)-2)
+		return StrFormatLen(tmp, formatlen)
 	end
 	function MsSmps(ms)
 		return math.floor(ms*samplerate/1000)
@@ -311,7 +320,7 @@ function init_utils()
 		TimersList[tid] = nil
 	end
 	function RemoveNote(nid)
-		NotesList[id] = nil
+		NotesList[nid] = nil
 	end
 	function NoteExist(nid)
 		if NotesList[nid] ~= nil then
@@ -353,15 +362,27 @@ function init_utils()
 	function TimerNoteExist(tid)
 		return NoteExist(GetTimerNoteId(tid))
 	end
+
+	--Debug Helpers
+	NoteTypeNames = {
+		"PENDING      ",
+		"SHORT        ",
+		"LONG    ?    ",
+		"SUSTAIN      ",
+		"LEGATO  ?    ",
+		"LEGSTART     ",
+		"LEGFOLLOW    ",
+	}
+	function NoteInfoStr(nid)
+		return GetNoteName(NotesList[nid].NoteNum,8).."    id= "..StrFormatLen(nid,8).."type= "..NoteTypeNames[NotesList[nid].Type]
+	end
 end
 --===========================================================================================
 
 function init_script()
 	init_utils()
-	EnableDebug()
+	DebugMessage("script initialized, samplerate = ", samplerate)
 end
-
-
 
 function ProcessShortNote(nid) 
 	NotesList[nid].Type = NoteType.short
@@ -375,10 +396,14 @@ function ProcessShortNote(nid)
 	keyswFunc(NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
 	PostMsg(NOTEON,control,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
 	PostMsg(NOTEOFF,control,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+	
+	DebugMessage(StrFormatLen("SHORT ON",15)..NoteInfoStr(nid))
 end
 function SustainNoteOff(nid)
 	--Process sustain note off
 	PostMsg(NOTEOFF,nid,value,0)
+
+	DebugMessage(StrFormatLen("NOTE OFF",15)..NoteInfoStr(nid))
 end
 function LegatoNoteEnterToleranceState(nid)
 	NotesList[nid].ToleranceState = true
@@ -390,6 +415,8 @@ function LegatoNoteEnterToleranceState(nid)
 		ValuePassed = nid,
 		Type = TimerType.tolerance
 	}
+
+	DebugMessage(StrFormatLen("T-STATE ON",15)..NoteInfoStr(nid))
 end
 function isLegatoNoteFollow(nid)	--return: bool isFollow {, int PrevID}
 	if 	NotesList[NotesList[nid].Prev] == nil or 									--No previous note.
@@ -407,11 +434,15 @@ function LegatoFollowNoteOn(nid,pid)	--return: bool isInToleranceState {, int To
 	local compensation = triageItem[2]
 	local overlap = triageItem[3]
 
+	NotesList[nid].Type = NoteType.long.legato.follow
 	NotesList[nid].LegatoLive = true
 	--Send note on
 	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime-PlayheadPos) - MsSmps(compensation))
 	--Send previous note off after a short period of time
 	PostMsg(NOTEOFF,NotesList[pid].NoteNum,64,(NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) +MsSmps(overlap))
+
+	DebugMessage(StrFormatLen("NOTE ON",15)..NoteInfoStr(nid))
+	DebugMessage(StrFormatLen("NOTE OFF FLW",15)..NoteInfoStr(pid))
 
 	--If the previous note is in tolerance state, return extra info
 	if NotesList[pid].ToleranceState == true then
@@ -430,7 +461,10 @@ function LegatoStartNoteOn(nid)
 	NotesList[nid].LegatoLive = true
 	keySwFunc((NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
 	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation))
+
+	DebugMessage(StrFormatLen("NOTE ON",15)..NoteInfoStr(nid))
 end
+
 function SustainNoteOn(nid)
 	NotesList[nid].Type = NoteType.long.sustain
 					
@@ -442,11 +476,15 @@ function SustainNoteOn(nid)
 	--Process sustain note
 	keySwFunc((NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
 	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime-PlayheadPos) - MsSmps(compensation))
+
+	DebugMessage(StrFormatLen("NOTE ON",15)..NoteInfoStr(nid))
 end
 function LegatoFinalNoteOff(nid)
 	NotesList[nid].LegatoLive = false;
 	NotesList[nid].ToleranceState = false;
 	PostMsg(NOTEOFF,NotesList[nid].NoteNum,64,(NotesList[nid].NoteEndTime-PlayheadPos)-MsSmps(lgt_release))
+
+	DebugMessage(StrFormatLen("LGT FINAL",15)..NoteInfoStr(nid))
 end
 function NoteEnterLengthPendingState(nid)	--return : int timerID
 	local tid = NewTimer(trs_short,nid)
@@ -501,10 +539,11 @@ function message_income(msgtype,control,value,assignid)
 			Prev = LastNote,
 			NoteNum = control
 		}
+		NoteEnterLengthPendingState(nid)
 		LastNote = nid
-		--DebugMessage("Stored note : ",NotesList[control])
 	elseif msgtype == TIMER then
 		local tid = control
+
 		if TimerExist(control) then
 			local nid = TimersList[tid].AssociatedNote
 
@@ -521,12 +560,12 @@ function message_income(msgtype,control,value,assignid)
 					if isFollow then
 						--Process follow note
 						local isInToleranceState, ToleranceTimer = LegatoFollowNoteOn(nid, pid)
-						--Cleanup
-						RemoveNote(pid)
 						--Conditional cleanup
 						if isInToleranceState then
 							RemoveTimer(ToleranceTimer)
 						end
+						--Cleanup
+						RemoveNote(pid)
 					--Process Start Note
 					else
 						LegatoStartNoteOn(nid)
@@ -540,6 +579,7 @@ function message_income(msgtype,control,value,assignid)
 				if TimerNoteExist(tid) then
 					LegatoFinalNoteOff(nid)
 				end
+				RemoveNote(nid)
 			end
 
 			RemoveTimer(control)
@@ -575,7 +615,5 @@ function message_income(msgtype,control,value,assignid)
 end
 
 function advance_time(samples)
-	--PLACE CODE HERE
-	--DebugMessage("\t\t\t\tAdvance time")
 	PlayheadPos = PlayheadPos + samples
 end

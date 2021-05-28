@@ -7,6 +7,9 @@ function init_framework()
 	]]
 	samplerate = 44100
 	thispointer = 0
+	
+	LUAINTMAX = 9223372036854775807
+	
 	function request_callback_timer(thispointer, samples, valuetopass)
 		local timerID = 0
 		return timerID
@@ -115,33 +118,100 @@ init_framework()
 --CUSTOMIZABLE SECTION START=================================================================
 ---------------------------------------------------------------------------------------------
 function init_utils()
-	--Compensation Constants (in milliseconds)
-	lgt_fast 	= 	156
-	lgt_medium 	= 	185
-	lgt_atkfast	=	50
-	lgt_mleg		=	101
-	spicc_atk		=	75
-	stctsm_atk		=	55
-	stac_atk		=	75
-	sfz_atk			=	70
-	sus_atk			=	70
-	mleg_atk		= 	70
 
-	lgt_release		=	80
+	--Legato Transition Constants
+	lgt_fast 			= 	156
+	lgt_medium 			= 	185
+	lgt_atkfast			=	50
+	lgt_mleg			=	101
+	--Legato Follow Tolerance
+	trs_lgt_continue 	= MsSmps(3)
+	--Legato Overlap Constants
+	lgt_overlap 		= 5
+	mlgt_overlap		= 10
 
+	--Attack Compensation Constants
+	spicc_atk			=	75
+	stctsm_atk			=	55
+	stac_atk			=	75
+	sfz_atk				=	70
+	sus_atk				=	70
+	mleg_atk			= 	70
+	--Release Compensation Constants
+	lgt_release			=	80
+	
+	--Keyswitch Offset Constants
 	keysw_lead      	=   10
+	
+	--Short Note Constants
 	short_uniform_len 	= 	150
-
-	trs_lgt_continue = MsSmps(3)
-
-	lgt_overlap = 5
-	mlgt_overlap = 10
-
-	trs_stctsm	=	MsSmps(40)
-	trs_stac	= 	trs_stctsm*2
-	trs_sfz 	=	trs_stctsm*3
-	trs_short 	= 	trs_stctsm*4
-
+	trs_stctsm			=	MsSmps(40)
+	trs_stac			= 	trs_stctsm*2
+	trs_sfz 			=	trs_stctsm*3
+	trs_short 			= 	trs_stctsm*4
+	
+	--Script Control Definition
+	EnableSwitchCtrl 	= 4
+	LegatoSwitchCtrl	= 5
+	MarcatoSwitchCtrl	= 6
+	
+	--Script Constants
+	PlayheadPosRange	= (LUAINTMAX	- 44100) --generally a block won't be larger than 44100 smps
+	
+	--Structure Definitions
+	Note = {
+		Type,
+		NoteOnTime,
+		OnTimeTransformed,
+		NoteEndTime,
+		EndTimeTransformed,
+		LegatoLive,
+		AssociatedTimer,
+		NoteVelo,
+		Prev,
+		ToleranceState,
+		ToleranceTimer,
+		NoteNum
+	}
+	
+	Timer = {
+		AssociatedNote,
+		TimerID,
+		ValuePassed,
+		Type
+	}
+	
+	--Enum Tables
+	NoteType = {
+		pending 		= 1,
+		short			= 2,
+		long = {
+			pending		= 3,
+			sustain		= 4,
+			legato = {
+				pending	= 5,
+				start	= 6,
+				follow	= 7
+			}
+		}
+	}
+	TimerType = {
+		length 			= 1,
+		tolerance 		= 2
+	}
+	
+	--Script Global Variables
+	NotesList 			= {}
+	TimersList			= {}
+	
+	LegatoModeOn 		= true
+	TransformEnabled	= true
+	MarcatoModeOn		= false
+	
+	LastNote			= -1
+	PlayheadPos			= 0
+	
+	--Triage Functions
 	function chk_len_spicc(smps) 
 		return smps<trs_stctsm
 	end
@@ -161,8 +231,14 @@ function init_utils()
 	function chk_vel_lgt_medium(vel)
 		return vel<=63
 	end
-	---------------------------------------------------------------------------------------------
-	--Functions and States
+	
+	function chk_marcato_mode()
+		return MarcatoModeOn
+	end
+	
+	function true_func() return true end
+	
+	--Keyswitch Functions
 	function switch_to_spicc(eventoffset) 
 		PostKeyEvt('f',' ','0',127,eventoffset)
 		PostControllerEvt(1,1,eventoffset+MsSmps(keysw_lead/2))
@@ -195,37 +271,38 @@ function init_utils()
 		PostKeyEvt('f','#','0',127,eventoffset)
 		PostKeyEvt('b','b','0',1,eventoffset+MsSmps(1))
 	end
-
-	NoteType = {
-		pending = 1,
-		short = 2,
-		long = {
-			pending=3,
-			sustain = 4,
-			legato = {
-				pending = 5,
-				start = 6,
-				follow = 7
-			}
-		}
+	
+	--Triage Tables (sorted by priority)
+	
+	function Triage(TriageTable, ... )		-- ... = arguments supplied to triage functions
+		for i,item in pairs(TriageTable) do	
+			if item[1](...) then			-- if the condition is fulfilled, return the item containing corresponding information
+				return item
+		end
+	end
+	
+	shortNoteTriageTable = {
+		[1] = { chk_len_spicc 	, spicc_atk	, switch_to_spicc	},
+		[2]	= { chk_len_stac 	, stac_atk	, switch_to_stac	},
+		[3] = { chk_len_stctsm	, stctsm_atk, switch_to_stctsm	},
+		[4] = { chk_len_sfz		, sfz_atk	, switch_to_sfz		}
 	}
-	TimerType = {length = 1, tolerance = 2}
 	
-	Note = {Type,NoteOnTime,OnTimeTransformed,NoteEndTime,EndTimeTransformed,LegatoLive,AssociatedTimer,NoteVelo,Prev,ToleranceState,ToleranceTimer,NoteNum}
-	Timer = {AssociatedNote,TimerID,ValuePassed,Type}
+	legatoSpeedTriageTable = {
+		[1] = { chk_marcato_mode 	, lgt_mleg 		, mlgt_overlap	},
+		[2] = { chk_vel_lgt_fast 	, lgt_fast 		, lgt_overlap	},
+		[3] = { chk_vel_lgt_medium 	, lgt_medium 	, lgt_overlap	}
+	}
 	
-	NotesList = {}
-	TimersList = {}
+	legatoAttackTriageTable = {
+		[1] = { chk_marcato_mode 	, mleg_atk		, switch_to_mlgt },
+		[2] = { true_func	 		, lgt_atkfast	, switch_to_lgt }	--default option
+	}
 	
-	LegatoModeOn = true
-	LastNote = -1
-	
-	EnableSwitchCtrl 	= 4
-	LegatoSwitchCtrl	= 5
-	MarcatoSwitchCtrl	= 6
-	
-	TransformEnabled	= true
-	MarcatoModeOn		= false	
+	sustainTriageTable = {
+		[1] = { chk_marcato_mode	, mleg_atk	, switch_to_marcato },
+		[2] = { true_func			, sus_atk	, switch_to_sustain	}	--default option
+	}
 end
 --===========================================================================================
 
@@ -261,7 +338,7 @@ function message_income(msgtype,control,value,assignid)
 
 	if not TransformEnabled then --Bypassed, forward NoteOn NoteOff and Controllers
 		if msgtype == CONTROLLER or msgtype == NOTEON or msgtype == NOTEOFF then
-			PostMsg(msgtype,control,value)
+			PostMsg(msgtype,control,value,0)
 		end
 		return
 	end --return after forwarding message
@@ -272,7 +349,7 @@ function message_income(msgtype,control,value,assignid)
 	elseif msgtype == NOTEON then
 		NotesList[assignid] = {
 			Type = NoteType.pending,
-			NoteOnTime = 0,
+			NoteOnTime = PlayheadPos,
 			OnTimeTransformed = nil,
 			NoteEndTime = nil,
 			EndTimeTransformed = nil,
@@ -334,24 +411,14 @@ function message_income(msgtype,control,value,assignid)
 						--Process follow note
 
 						--Select legato transition length
-						local compensation = 0
-						local overlap = 0
-						if MarcatoModeOn then
-							compensation = lgt_mleg
-							overlap = mlgt_overlap
-						else
-							overlap = lgt_overlap
-							if chk_vel_lgt_fast(NotesList[currNoteId].NoteVelo) then
-								compensation = lgt_fast
-							elseif chk_vel_lgt_medium(NotesList[currNoteId].NoteVelo) then
-								compensation = lgt_medium
-							end
-						end
+						local triageItem = Triage(legatoSpeedTriageTable,NotesList[currNoteId].NoteVelo)
+						local compensation = triageItem[1]
+						local overlap = [2]
 
 						--Process Note
-						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
+						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
 						DebugMessage("LEGATO FOLLOW NOTE ON ",GetNoteName(value))
-						PostMsg(NOTEOFF,NotesList[NotesList[currNoteId].Prev].NoteNum,64,NotesList[currNoteId].NoteOnTime - MsSmps(compensation) +MsSmps(overlap))
+						PostMsg(NOTEOFF,NotesList[NotesList[currNoteId].Prev].NoteNum,64,(NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) +MsSmps(overlap))
 						DebugMessage("TERMINATE PREV",GetNoteName(NotesList[NotesList[currNoteId].Prev].NoteNum))
 						if NotesList[NotesList[currNoteId].Prev] ~= nil then
 							if NotesList[NotesList[currNoteId].Prev].ToleranceState == true then
@@ -363,41 +430,30 @@ function message_income(msgtype,control,value,assignid)
 						DebugMessage("PREV note REMOVED")
 					--Process Start Note
 					else
-						local keySwFunc = nil
-						local compensation = nil
-						--Select Compensation and Keyswitch
-						if MarcatoModeOn then
-							keySwFunc = switch_to_mlgt
-							compensation = mleg_atk
-						else
-							keySwFunc = switch_to_lgt
-							compensation = lgt_atkfast
-						end
-
+						--Select attack compensation and keyswitch
+						local triageItem = Triage(legatoAttackTriageTable)
+						local compensation = triageIttem[1]
+						local keySwFunc = triageItem[2]
+						
 						--Process note
 						NotesList[currNoteId].Type = NoteType.long.legato.start
-						keySwFunc(NotesList[currNoteId].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
-						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
+						keySwFunc((NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
+						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation))
 						DebugMessage("LEGATO START NOTE ON ",GetNoteName(NotesList[currNoteId].NoteNum))
 					end
 				--Sustain
 				else
 					DebugMessage("Legato mode OFF, type -> [long.SUSTAIN]")
 					NotesList[currNoteId].Type = NoteType.long.sustain
-
-					local keySwFunc = nil
-					local compensation = 0
+					
 					--Select technique and compensation
-					if MarcatoModeOn then
-						keySwFunc = switch_to_marcato
-						compensation = mleg_atk
-					else
-						keySwFunc = switch_to_sustain
-						compensation = sus_atk
-					end
+					local triageItem = Triage(sustainTriageTable)
+					local compensation = triageItem[1]
+					local keySwFunc = triageItem[2]
+					
 					--Process sustain note
-					keySwFunc(NotesList[currNoteId].NoteOnTime - MsSmps(compensation) - MsSmps(keysw_lead))
-					PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,NotesList[currNoteId].NoteOnTime - MsSmps(compensation))
+					keySwFunc((NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
+					PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
 				end
 			--ExitLegatoState process
 			elseif timer.Type == TimerType.tolerance then
@@ -407,7 +463,7 @@ function message_income(msgtype,control,value,assignid)
 					NotesList[currNoteId].ToleranceState = false;
 					DebugMessage(GetNoteName(NotesList[currNoteId].NoteNum)," TOLERANCE STATE END, EXIT LEGATO STATE")
 					DebugMessage("NOTE END TIME ==============",NotesList[currNoteId].NoteEndTime)
-					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,NotesList[currNoteId].NoteEndTime-MsSmps(lgt_release))
+					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,(NotesList[currNoteId].NoteEndTime-PlayheadPos)-MsSmps(lgt_release))
 					NotesList[currNoteId] = nil
 				else
 					DebugMessage("ALREADY removed, SKIP tolerance timer")
@@ -419,31 +475,20 @@ function message_income(msgtype,control,value,assignid)
 			DebugMessage("Note already removed, skip.")
 		else
 			DebugMessage("Note ",GetNoteName(control),"\tOFF , Stored note: ",NotesList[assignid])
-			NotesList[assignid].NoteEndTime = 0
+			NotesList[assignid].NoteEndTime = PlayheadPos
 			if NotesList[assignid].Type == NoteType.pending then
 				TimersList[NotesList[assignid].AssociatedTimer] = nil
 				DebugMessage("timer abandoned.")
 				NotesList[assignid].Type = NoteType.short
-				local noteLen = -NotesList[assignid].NoteOnTime
+				local noteLen = PlayheadPos-NotesList[assignid].NoteOnTime
 				DebugMessage("Note ",GetNoteName(control)," type -> short , length = ",noteLen)
-				local shortCorrection = 0
-				if chk_len_sfz(noteLen) then
-					--DebugMessage("length = ",noteLen," , type = [SFZ]")
-					shortCorrection = sfz_atk
-					switch_to_sfz(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
-				elseif chk_len_stac(noteLen) then
-					--DebugMessage("length = ",noteLen," , type = [STAC]")
-					shortCorrection = stac_atk
-					switch_to_stac(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
-				elseif chk_len_stctsm(noteLen) then
-					--DebugMessage("length = ",noteLen," , type = [STCTSM]")
-					shortCorrection = stctsm_atk
-					switch_to_stctsm(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))	
-				elseif chk_len_spicc(noteLen) then
-					--DebugMessage("length = ",noteLen," , type = [SPICC]")
-					shortCorrection = spicc_atk
-					switch_to_spicc(NotesList[assignid].NoteOnTime - MsSmps(shortCorrection)-MsSmps(keysw_lead))
-				end
+				
+				--Select correction and keyswitch
+				local triageItem = Triage(shortNoteTriageTable, noteLen)
+				local shortCorrection = triageItem[1]
+				local keyswFunc = triageItem[2]
+
+				keyswFunc(NotesList[assignid].NoteOnTime -PlayheadPos- MsSmps(shortCorrection)-MsSmps(keysw_lead))
 				PostMsg(NOTEON,control,NotesList[assignid].NoteVelo,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection))
 				PostMsg(NOTEOFF,control,64,NotesList[assignid].NoteOnTime - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
 				DebugMessage("[SHORT] Note ",GetNoteName(control)," removed from list")
@@ -475,12 +520,5 @@ end
 function advance_time(samples)
 	--PLACE CODE HERE
 	--DebugMessage("\t\t\t\tAdvance time")
-	for notenum,notedata in pairs(NotesList) do
-		local fields = {'NoteOnTime','NoteEndTime','OnTimeTransformed','EndTimeTransformed'}
-		for i,field in pairs(fields) do
-			if notedata[field] ~= nil then
-				notedata[field] = notedata[field] - samples
-			end
-		end
-	end
+	PlayheadPos = PlayheadPos + samples
 end

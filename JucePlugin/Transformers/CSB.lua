@@ -150,11 +150,6 @@ function init_utils()
 	trs_sfz 			=	trs_stctsm*3
 	trs_short 			= 	trs_stctsm*4
 	
-	--Script Control Definition
-	EnableSwitchCtrl 	= 4
-	LegatoSwitchCtrl	= 5
-	MarcatoSwitchCtrl	= 6
-	
 	--Script Constants
 	PlayheadPosRange	= (LUAINTMAX	- 44100) --generally a block won't be larger than 44100 smps
 	
@@ -203,14 +198,20 @@ function init_utils()
 	--Script Global Variables
 	NotesList 			= {}
 	TimersList			= {}
-	
-	LegatoModeOn 		= true
-	TransformEnabled	= true
-	MarcatoModeOn		= false
-	
 	LastNote			= -1
 	PlayheadPos			= 0
-	
+
+	--Script Control Definition
+	EnableSwitchCtrl 		= 4
+	LegatoSwitchCtrl		= 5
+	MarcatoSwitchCtrl		= 6
+	ForceLengthTypeCtrl		= 9
+	LegatoModeOn 			= true
+	TransformEnabled		= true
+	MarcatoModeOn			= false
+	ForceLength				= 0 		-- 1 = Force Long
+
+
 	--Triage Functions
 	function chk_len_spicc(smps) 
 		return smps<trs_stctsm
@@ -304,23 +305,167 @@ function init_utils()
 		[1] = { chk_marcato_mode	, mleg_atk	, switch_to_marcato },
 		[2] = { true_func			, sus_atk	, switch_to_sustain	}	--default option
 	}
+
+	--Helper Functions
+	function RemoveTimer(tid)
+		TimersList[tid] = nil
+	end
+	function RemoveNote(nid)
+		NotesList[id] = nil
+	end
+	function NoteExist(nid)
+		if NotesList[nid] ~= nil then
+			return true
+		else
+			return false
+		end
+	end
+	function TimerExist(tid)
+		if TimersList[tid] ~= nil then
+			return true
+		else
+			return false
+		end
+	end
+	function GetNoteTimerId(nid)
+		if NoteExist(nid) then
+			return NotesList[nid].AssociatedTimer
+		else
+			return 0
+		end
+	end
+	function GetTimerNoteId(tid)
+		if TimerExist(tid) then
+			return TimersList[tid].AssociatedNote
+		else
+			return 0
+		end
+	end
+	function GetNoteTimer(nid)
+		return TimersList[GetNoteTimerId(nid)]
+	end
+	function GetTimerNote(tid)
+		return NotesList[GetTimerNoteId(tid)]
+	end
+	function NoteTimerExist(nid)
+		return TimerExist(GetNoteTimerId(nid))
+	end
+	function TimerNoteExist(tid)
+		return NoteExist(GetTimerNoteId(tid))
+	end
 end
 --===========================================================================================
 
 function init_script()
 	init_utils()
 	EnableDebug()
-	DebugMessage("Script Initialized. SR=",samplerate)
+end
+
+
+
+function ProcessShortNote(nid) 
+	NotesList[nid].Type = NoteType.short
+	local noteLen = PlayheadPos-NotesList[nid].NoteOnTime
+	
+	--Select correction and keyswitch
+	local triageItem = Triage(shortNoteTriageTable, noteLen)
+	local shortCorrection = triageItem[2]
+	local keyswFunc = triageItem[3]
+
+	keyswFunc(NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
+	PostMsg(NOTEON,control,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
+	PostMsg(NOTEOFF,control,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+end
+function SustainNoteOff(nid)
+	--Process sustain note off
+	PostMsg(NOTEOFF,nid,value,0)
+end
+function LegatoNoteEnterToleranceState(nid)
+	NotesList[nid].ToleranceState = true
+	local tid = NewTimer(trs_lgt_continue+trs_short,nid)
+	NotesList[nid].AssociatedTimer = tid
+	TimersList[tid] = {
+		AssociatedNote = nid,
+		TimerID = tid,
+		ValuePassed = nid,
+		Type = TimerType.tolerance
+	}
+end
+function isLegatoNoteFollow(nid)	--return: bool isFollow {, int PrevID}
+	if 	NotesList[NotesList[nid].Prev] == nil or 									--No previous note.
+		NotesList[NotesList[nid].Prev].NoteNum == NotesList[nid].NoteNum then 		--Same note repetition.
+		return false
+	elseif NotesList[NotesList[nid].Prev].LegatoLive then							--Has previous note, and prev note is live
+		return true, NotesList[nid].Prev
+	else
+		return false
+	end
+end
+function LegatoFollowNoteOn(nid,pid)	--return: bool isInToleranceState {, int ToleranceTimerID}
+	--Select legato transition length
+	local triageItem = Triage(legatoSpeedTriageTable,NotesList[nid].NoteVelo)
+	local compensation = triageItem[2]
+	local overlap = triageItem[3]
+
+	NotesList[nid].LegatoLive = true
+	--Send note on
+	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime-PlayheadPos) - MsSmps(compensation))
+	--Send previous note off after a short period of time
+	PostMsg(NOTEOFF,NotesList[pid].NoteNum,64,(NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) +MsSmps(overlap))
+
+	--If the previous note is in tolerance state, return extra info
+	if NotesList[pid].ToleranceState == true then
+		return true, NotesList[pid].AssociatedTimer
+	end
+	return false
+end
+function LegatoStartNoteOn(nid)
+	--Select attack compensation and keyswitch
+	local triageItem = Triage(legatoAttackTriageTable)
+	local compensation = triageItem[2]
+	local keySwFunc = triageItem[3]
+	
+	--Process note
+	NotesList[nid].Type = NoteType.long.legato.start
+	NotesList[nid].LegatoLive = true
+	keySwFunc((NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
+	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation))
+end
+function SustainNoteOn(nid)
+	NotesList[nid].Type = NoteType.long.sustain
+					
+	--Select technique and compensation
+	local triageItem = Triage(sustainTriageTable)
+	local compensation = triageItem[2]
+	local keySwFunc = triageItem[3]
+	
+	--Process sustain note
+	keySwFunc((NotesList[nid].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
+	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,(NotesList[nid].NoteOnTime-PlayheadPos) - MsSmps(compensation))
+end
+function LegatoFinalNoteOff(nid)
+	NotesList[nid].LegatoLive = false;
+	NotesList[nid].ToleranceState = false;
+	PostMsg(NOTEOFF,NotesList[nid].NoteNum,64,(NotesList[nid].NoteEndTime-PlayheadPos)-MsSmps(lgt_release))
+end
+function NoteEnterLengthPendingState(nid)	--return : int timerID
+	local tid = NewTimer(trs_short,nid)
+	TimersList[tid] ={
+		AssociatedNote = nid,
+		TimerID = NotesList[nid].AssociatedTimer,
+		ValuePassed = nid,
+		Type = TimerType.length
+	}
+	NotesList[nid].AssociatedTimer = tid
+	return tid 
 end
 
 function message_income(msgtype,control,value,assignid)
-	DebugMessage("message_income,",msgtype,",",control,",",value)
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
 		--Process switches
 		if control == EnableSwitchCtrl then
 			TransformEnabled = BoolController(value)
-			DebugMessage("ENABLE STATE = ",TransformEnabled)
 			--clean up when bypassed
 			if not TransformEnabled then
 				NotesList = {}
@@ -329,10 +474,10 @@ function message_income(msgtype,control,value,assignid)
 			end
 		elseif control == LegatoSwitchCtrl then
 			LegatoModeOn = BoolController(value)
-			DebugMessage("LEGATO MODE = ",LegatoModeOn)
 		elseif control == MarcatoSwitchCtrl then
 			MarcatoModeOn = BoolController(value)
-			DebugMessage("MARCATO MODE = ",MarcatoModeOn)
+		elseif control == ForceLengthTypeCtrl then
+			ForceLength = BoolController(value)
 		end
 		return
 	end --return after switch is processed
@@ -348,171 +493,82 @@ function message_income(msgtype,control,value,assignid)
 		--Bypass all controllers other than switches
 		PostMsg(msgtype,control,value,0)
 	elseif msgtype == NOTEON then
-		NotesList[assignid] = {
+		local nid = assignid
+		NotesList[nid] = {
 			Type = NoteType.pending,
 			NoteOnTime = PlayheadPos,
-			OnTimeTransformed = nil,
-			NoteEndTime = nil,
-			EndTimeTransformed = nil,
-			LegatoLive = nil,
-			AssociatedTimer = NewTimer(trs_short,control),
 			NoteVelo = value,
 			Prev = LastNote,
-			ToleranceState = nil,
 			NoteNum = control
 		}
-		DebugMessage("Timer: ",NotesList[assignid].AssociatedTimer)
-		TimersList[NotesList[assignid].AssociatedTimer] ={
-			AssociatedNote = assignid,
-			TimerID = NotesList[assignid].AssociatedTimer,
-			ValuePassed = assignid,
-			Type = TimerType.length
-		}
-		LastNote = assignid
-		DebugMessage(GetNoteName(control),"\tON ","Timer: ",TimersList[NotesList[assignid].AssociatedTimer].TimerID, "NoteID = ",assignid)
+		LastNote = nid
 		--DebugMessage("Stored note : ",NotesList[control])
 	elseif msgtype == TIMER then
-		DebugMessage("timer hit : ",control)
-		local timer = TimersList[control]
-		if timer == nil then
-			--DebugMessage("timer already abandoned, do nothing")
-		else
-			local currNoteId = timer.AssociatedNote
-			TimersList[control] = nil
-			DebugMessage("timer removed.")
+		local tid = control
+		if TimerExist(control) then
+			local nid = TimersList[tid].AssociatedNote
 
 			--Long note process
-			if timer.Type == TimerType.length then
-				DebugMessage("Note ",GetNoteName(NotesList[currNoteId].NoteNum)," type -> [long.PENDING]")
-				NotesList[currNoteId].Type = NoteType.long.pending
+			if TimersList[tid].Type == TimerType.length then
+				NotesList[nid].Type = NoteType.long.pending
 
 				--Legato
 				if LegatoModeOn then
-					DebugMessage("Legato mode ON, type -> [long.legato.PENDING]")
-					DebugMessage("PREV = ",GetNoteName(NotesList[currNoteId].Prev))
-					NotesList[currNoteId].Type = NoteType.long.legato.pending
-					NotesList[currNoteId].LegatoLive = true
-
 					--Determine if the legato note is START or FOLLOW
-					local isFollow = false
-					if NotesList[NotesList[currNoteId].Prev] == nil then
-						DebugMessage("Prev note REMOVED, type -> [long.legato.START]")
-						NotesList[currNoteId].Type = NoteType.long.legato.start
-					elseif NotesList[currNoteId].Prev == value then
-						DebugMessage("Same note, type -> [long.legato.START]")
-						NotesList[currNoteId].Type = NoteType.long.legato.start
-					elseif NotesList[NotesList[currNoteId].Prev].LegatoLive then
-						DebugMessage("LEGATO FOLLOW ",GetNoteName(NotesList[currNoteId].Prev)," -> ",GetNoteName(value))
-						NotesList[currNoteId].Type = NoteType.long.legato.follow
-						isFollow = true
-					end
+					local isFollow, pid = isLegatoNoteFollow(nid)
 
 					--Process Follow note
 					if isFollow then
 						--Process follow note
-
-						--Select legato transition length
-						local triageItem = Triage(legatoSpeedTriageTable,NotesList[currNoteId].NoteVelo)
-						local compensation = triageItem[2]
-						local overlap = triageItem[3]
-
-						--Process Note
-						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
-						DebugMessage("LEGATO FOLLOW NOTE ON ",GetNoteName(value))
-						PostMsg(NOTEOFF,NotesList[NotesList[currNoteId].Prev].NoteNum,64,(NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) +MsSmps(overlap))
-						DebugMessage("TERMINATE PREV",GetNoteName(NotesList[NotesList[currNoteId].Prev].NoteNum))
-						if NotesList[NotesList[currNoteId].Prev] ~= nil then
-							if NotesList[NotesList[currNoteId].Prev].ToleranceState == true then
-								DebugMessage("PREV note in TOLERANCE STATE, REMOVE TIMER")
-								TimersList[NotesList[NotesList[currNoteId].Prev].ToleranceTimer] = nil
-							end
-						end							
-						NotesList[NotesList[currNoteId].Prev] = nil
-						DebugMessage("PREV note REMOVED")
+						local isInToleranceState, ToleranceTimer = LegatoFollowNoteOn(nid, pid)
+						--Cleanup
+						RemoveNote(pid)
+						--Conditional cleanup
+						if isInToleranceState then
+							RemoveTimer(ToleranceTimer)
+						end
 					--Process Start Note
 					else
-						--Select attack compensation and keyswitch
-						local triageItem = Triage(legatoAttackTriageTable)
-						local compensation = triageItem[2]
-						local keySwFunc = triageItem[3]
-						
-						--Process note
-						NotesList[currNoteId].Type = NoteType.long.legato.start
-						keySwFunc((NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
-						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation))
-						DebugMessage("LEGATO START NOTE ON ",GetNoteName(NotesList[currNoteId].NoteNum))
+						LegatoStartNoteOn(nid)
 					end
 				--Sustain
 				else
-					DebugMessage("Legato mode OFF, type -> [long.SUSTAIN]")
-					NotesList[currNoteId].Type = NoteType.long.sustain
-					
-					--Select technique and compensation
-					local triageItem = Triage(sustainTriageTable)
-					local compensation = triageItem[2]
-					local keySwFunc = triageItem[3]
-					
-					--Process sustain note
-					keySwFunc((NotesList[currNoteId].NoteOnTime -PlayheadPos)- MsSmps(compensation) - MsSmps(keysw_lead))
-					PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
+					SustainNoteOn(nid)
 				end
 			--ExitLegatoState process
-			elseif timer.Type == TimerType.tolerance then
-				DebugMessage("ToleranceTimer , noteid = ",currNoteId)
-				if NotesList[currNoteId] ~= nil then
-					NotesList[currNoteId].LegatoLive = false;
-					NotesList[currNoteId].ToleranceState = false;
-					DebugMessage(GetNoteName(NotesList[currNoteId].NoteNum)," TOLERANCE STATE END, EXIT LEGATO STATE")
-					DebugMessage("NOTE END TIME ==============",NotesList[currNoteId].NoteEndTime)
-					PostMsg(NOTEOFF,NotesList[currNoteId].NoteNum,64,(NotesList[currNoteId].NoteEndTime-PlayheadPos)-MsSmps(lgt_release))
-					NotesList[currNoteId] = nil
-				else
-					DebugMessage("ALREADY removed, SKIP tolerance timer")
+			elseif TimersList[tid].Type == TimerType.tolerance then
+				if TimerNoteExist(tid) then
+					LegatoFinalNoteOff(nid)
 				end
 			end
+
+			RemoveTimer(control)
 		end
 	elseif msgtype == NOTEOFF then
-		if(NotesList[assignid] == nil) then
-			DebugMessage("Note already removed, skip.")
+		if not NoteExist(assignid) then
 		else
-			DebugMessage("Note ",GetNoteName(control),"\tOFF , Stored note: ",NotesList[assignid])
+			--Data prep
 			NotesList[assignid].NoteEndTime = PlayheadPos
+			local nid = assignid
+			local tid = GetNoteTimerId(assignid)
+		
 			if NotesList[assignid].Type == NoteType.pending then
-				TimersList[NotesList[assignid].AssociatedTimer] = nil
-				DebugMessage("timer abandoned.")
-				NotesList[assignid].Type = NoteType.short
-				local noteLen = PlayheadPos-NotesList[assignid].NoteOnTime
-				DebugMessage("Note ",GetNoteName(control)," type -> short , length = ",noteLen)
-				
-				--Select correction and keyswitch
-				local triageItem = Triage(shortNoteTriageTable, noteLen)
-				local shortCorrection = triageItem[2]
-				local keyswFunc = triageItem[3]
+				--Process short note
+				ProcessShortNote(nid)
+				RemoveNote(nid)
+				RemoveTimer(tid)
 
-				keyswFunc(NotesList[assignid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
-				PostMsg(NOTEON,control,NotesList[assignid].NoteVelo,NotesList[assignid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
-				PostMsg(NOTEOFF,control,64,NotesList[assignid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
-				DebugMessage("[SHORT] Note ",GetNoteName(control)," removed from list")
-				NotesList[assignid] = nil
 			elseif NotesList[assignid].Type == NoteType.long.sustain then
-				DebugMessage("Note ",GetNoteName(control)," [SUSTAIN] note off, length = ",-NotesList[assignid].NoteOnTime)
-				NotesList[assignid] = nil
-				DebugMessage("Note ",GetNoteName(control)," removed from list")
-				PostMsg(NOTEOFF,control,value,0)
+				--Process sustain note off
+				SustainNoteOff(nid)
+				RemoveNote(nid)
+				RemoveTimer(tid)
+
 			elseif NotesList[assignid].Type == NoteType.long.legato.start or NotesList[assignid].Type == NoteType.long.legato.follow then
-				DebugMessage("Note ",GetNoteName(control)," [LEGATO] note off, enter TOLERANCE STATE")
-				NotesList[assignid].ToleranceState = true
-				local tid = NewTimer(trs_lgt_continue+trs_short,assignid)
-				NotesList[assignid].ToleranceTimer = tid
-				TimersList[tid] = {
-					AssociatedNote = assignid,
-					TimerID = tid,
-					ValuePassed = assignid,
-					Type = TimerType.tolerance
-				}
-				DebugMessage("Tolerance state timer added.")
-				--NotesList[control] = nil
-				--PostMsg(NOTEOFF,control,value,0)
+				--Process legato note off
+				LegatoNoteEnterToleranceState(nid)
+				--RemoveNote(nid)  						leave it there for future reading
+				--PostMsg(NOTEOFF,control,value,0)		don't send noteoff, wait for next possible followers
 			end
 		end
 	end

@@ -278,6 +278,7 @@ function init_utils()
 		for i,item in pairs(TriageTable) do	
 			if item[1](...) then			-- if the condition is fulfilled, return the item containing corresponding information
 				return item
+			end
 		end
 	end
 	
@@ -413,7 +414,7 @@ function message_income(msgtype,control,value,assignid)
 						--Select legato transition length
 						local triageItem = Triage(legatoSpeedTriageTable,NotesList[currNoteId].NoteVelo)
 						local compensation = triageItem[1]
-						local overlap = [2]
+						local overlap = triageItem[2]
 
 						--Process Note
 						PostMsg(NOTEON,NotesList[currNoteId].NoteNum,NotesList[currNoteId].NoteVelo,(NotesList[currNoteId].NoteOnTime-PlayheadPos) - MsSmps(compensation))
@@ -432,7 +433,7 @@ function message_income(msgtype,control,value,assignid)
 					else
 						--Select attack compensation and keyswitch
 						local triageItem = Triage(legatoAttackTriageTable)
-						local compensation = triageIttem[1]
+						local compensation = triageItem[1]
 						local keySwFunc = triageItem[2]
 						
 						--Process note

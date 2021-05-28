@@ -136,6 +136,23 @@ void MidiTransformer::InitScript(const char* luaFile)
     L = luaL_newstate();
     luaL_openlibs(L);
     
+    //Loads error output function. If script has syntax error, ShowVarStr written in script won't be available.
+    int luaL_dostring(L, R"(
+function ShowVarStr(var,varname)
+	local str = ''
+	if type(var) ~= 'table' then
+		str = str..varname..' = '..var
+		return str
+	else
+		str = str..varname..' = { '
+		for i,v in pairs(var) do
+			str = str..ShowVarStr(i,v)..' , '
+		end
+		return str..'}'
+	end
+end
+)");
+    
     //Load transformer script
     PrepareSafeCall();
     luaL_loadfile(L, luaFile);
@@ -280,8 +297,7 @@ int MidiTransformer::SafeCall(int args, int rets)
         lua_call(L, 2, 1);
         juce::String errmsg = lua_tostring(L, 1);
         lua_pop(L, 1); //Stack cleared
-        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", "Lua script failed!");
-        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", errmsg);
+        juce::NativeMessageBox::showMessageBoxAsync(juce::AlertWindow::AlertIconType::InfoIcon, "ERROR", "Lua script failue: \n"+errmsg);
     }
     return err;
 }

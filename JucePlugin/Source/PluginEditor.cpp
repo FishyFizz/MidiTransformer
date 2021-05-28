@@ -197,6 +197,10 @@ void JucePluginAudioProcessorEditor::handleCommandMessage(int commandId)
     {
         if (debugShow)
         {
+            if (debugOutput.length() > 3000)
+            {
+                myprocessor->debugOutput = debugOutput = debugOutput.substring(1000);
+            }
             debugShow->setText(debugOutput);
             debugShow->moveCaretToEnd();
             debugShow->scrollEditorToPositionCaret(0, debugShow->getHeight() - 30);

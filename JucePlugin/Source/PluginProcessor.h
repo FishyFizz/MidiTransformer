@@ -10,7 +10,9 @@
 
 #include <JuceHeader.h>
 #include "MidiTransformer.h"
-
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+using namespace boost::interprocess;
 //==============================================================================
 /**
 */
@@ -61,10 +63,11 @@ public:
     MidiTransformer* tf;
     void initScript(juce::String scriptfile);
     juce::String debugOutput;
+    juce::StringArray debugMessages;
     void ReportLatency();
     
     void setScriptInitialized(bool b);
-    void setAutoBypass(bool b);
+    void setAutoBypass(bool b, bool notifyOtherInstances = true);
     void setBypassed(bool b);
     void setDbgOutEnable(bool b);
 
@@ -83,7 +86,77 @@ public:
     juce::PluginDescription desc;
     juce::String scriptFileName;
 
-    //Memory Block Writing Helpers==================================================
+    //IPC Implementation============================================================
+    class MidiTransformerIPCSync : public juce::Thread
+    {
+    public:
+        JucePluginAudioProcessor* parent;
+        
+        MidiTransformerIPCSync(JucePluginAudioProcessor* _parent) :Thread("MidiTransformerIPCSyncThread") { parent = _parent; }
+
+        struct MidiTransformerSyncedProperties
+        {
+            bool autoBypass;
+            int instancesCount;
+            bool operator!=(const MidiTransformerSyncedProperties& b)
+            {
+                return autoBypass != b.autoBypass || instancesCount != b.instancesCount;
+            }
+        };
+
+        MidiTransformerSyncedProperties properties;
+        MidiTransformerSyncedProperties* mappedProperties;
+        shared_memory_object memobj;
+        mapped_region memmap;
+        bool suspend = false;
+        void overwrite(MidiTransformerSyncedProperties& const newproperties)
+        {
+            properties = newproperties;
+            *mappedProperties = properties;
+        }
+        void run() override
+        {
+            
+            memobj = shared_memory_object(open_or_create, "MidiTransformerIpcSync", read_write);
+            offset_t memsize;
+            memobj.get_size(memsize);
+            if (memsize == 0) // newly opened
+            {
+                // set size of new shared block
+                memobj.truncate(sizeof(MidiTransformerSyncedProperties));
+                memmap = mapped_region(memobj, read_write);
+                mappedProperties = (MidiTransformerSyncedProperties *) memmap.get_address();
+
+                // write data
+                properties = { parent->autoBypass,1 };
+                *mappedProperties = properties;
+            }
+            else
+            {
+                memmap = mapped_region(memobj, read_write);
+                mappedProperties = (MidiTransformerSyncedProperties*)memmap.get_address();
+                mappedProperties->instancesCount++;
+            }
+
+            // change listener loop
+            while (!threadShouldExit())
+            {
+                if (suspend) continue;
+                if (*mappedProperties != properties)
+                {
+                    properties = *mappedProperties;
+                    parent->SyncPropertiesUpdated(properties);
+                }
+            }
+
+            //Check if instance count is 0, and close shared memory object if needed
+            if (mappedProperties->instancesCount == 0)
+            {
+                shared_memory_object::remove("MidiTransformerIpcSync");
+            }
+        }
+    } *SyncObject = nullptr;
+    void SyncPropertiesUpdated(const MidiTransformerIPCSync::MidiTransformerSyncedProperties& properties);
 
 #ifdef DEBUG
     long long debugCounter=0;

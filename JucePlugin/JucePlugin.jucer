@@ -6,8 +6,6 @@
               companyName="Fizz" companyEmail="fishy_fizz@outlook.com">
   <MAINGROUP id="cx7g8l" name="MIDI Transformer">
     <GROUP id="{7E16561E-4A03-FB33-B0F2-8679D5F06E1D}" name="Source">
-      <FILE id="zT9QyU" name="MidiTransformerNotifyMessage.h" compile="0"
-            resource="0" file="Source/MidiTransformerNotifyMessage.h"/>
       <FILE id="PFow4P" name="RectArranger.h" compile="0" resource="0" file="Source/RectArranger.h"/>
       <FILE id="sll5Yw" name="MidiTransformer.cpp" compile="1" resource="0"
             file="Source/MidiTransformer.cpp"/>
@@ -33,7 +31,8 @@
   <EXPORTFORMATS>
     <VS2019 targetFolder="Builds/VisualStudio2019">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="JucePlugin" defines="NOPLUGIN"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="JucePlugin" defines="NOPLUGIN"
+                       libraryPath="C:\Users\Fizz\source\repos\Boost\stage\lib" headerPath="C:\Users\Fizz\source\repos\Boost\"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="JucePlugin"/>
       </CONFIGURATIONS>
       <MODULEPATHS>

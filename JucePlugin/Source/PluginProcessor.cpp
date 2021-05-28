@@ -23,7 +23,8 @@ JucePluginAudioProcessor::JucePluginAudioProcessor()
                        )
 #endif
 {
-
+    SyncObject = new MidiTransformerIPCSync(this);
+    SyncObject->startThread();
 }
 
 
@@ -313,12 +314,32 @@ void JucePluginAudioProcessor::luaFail()
 {
 }
 
-void JucePluginAudioProcessor::setAutoBypass(bool b)
+void JucePluginAudioProcessor::SyncPropertiesUpdated(const MidiTransformerIPCSync::MidiTransformerSyncedProperties& properties)
+{
+    if (autoBypass != properties.autoBypass)
+        setAutoBypass(properties.autoBypass, false);
+    if (debugOutputEnabled)
+    {
+        debugMessages.add(juce::String("[SYNC] IPC Sync: autobypass = ") + juce::String((int)properties.autoBypass) + " , instances = " + juce::String(properties.instancesCount));
+        if (auto e = getActiveEditor())
+            e->postCommandMessage(1);//refresh dbgout
+    }
+}
+
+void JucePluginAudioProcessor::setAutoBypass(bool b,bool notifyOtherInstances)
 {
     if (autoBypass == b)
         return;
     autoBypass = b;
     refreshEditorToggleButton();
+    if (notifyOtherInstances)
+    {
+        MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
+        p.autoBypass = autoBypass;
+        SyncObject->suspend = true;
+        SyncObject->overwrite(p);
+        SyncObject->suspend = false;
+    }
 }
 
 void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -373,22 +394,6 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         tf->retrieveMidi(TransformedMidiMessage, bufLen);
         midiMessages.clear();
         midiMessages = TransformedMidiMessage;
-
-        if (debugOutputEnabled)
-        {
-            bool refreshText = tf->debugMessages.size();
-            while (tf->debugMessages.size())
-            {
-                debugOutput += tf->debugMessages[0] + "\n";
-                tf->debugMessages.remove(0);
-            }
-            JucePluginAudioProcessorEditor* editor;
-            if ((editor = (JucePluginAudioProcessorEditor*)getActiveEditor()) && refreshText)
-            {
-                editor->debugOutput = debugOutput;
-                editor->postCommandMessage(1);
-            }
-        }
     }
 
     if (pluginLoaded)
@@ -397,17 +402,50 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         plugin->prepareToPlay(getSampleRate(), bufLen);
         plugin->processBlock(buffer,  scriptInitialized?TransformedMidiMessage:midiMessages);
     }
+
+    if (debugOutputEnabled)
+    {
+        JucePluginAudioProcessorEditor* editor;
+        if (editor = (JucePluginAudioProcessorEditor*)getActiveEditor())
+        {
+            bool refreshText = tf->debugMessages.size() || debugMessages.size();
+            while (tf->debugMessages.size())
+            {
+                debugOutput += tf->debugMessages[0] + "\n";
+                tf->debugMessages.remove(0);
+            }
+            while (debugMessages.size())
+            {
+                debugOutput += debugMessages[0] + "\n";
+                debugMessages.remove(0);
+            }
+            editor->debugOutput = debugOutput;
+            if(refreshText)
+                editor->postCommandMessage(1);
+        }
+    }
 }
 
 JucePluginAudioProcessor::~JucePluginAudioProcessor()
 {
     if (pluginLoaded)
         unloadPlugin();
+    if (SyncObject)
+    {
+        MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
+        p.instancesCount--;
+        SyncObject->suspend = true;
+        SyncObject->overwrite(p);
+        SyncObject->suspend = false;
+        SyncObject->signalThreadShouldExit();
+        SyncObject->waitForThreadToExit(1000);
+        delete SyncObject;
+    }
 }
 
 juce::AudioProcessorEditor* JucePluginAudioProcessor::createEditor()
 {
     auto e = new JucePluginAudioProcessorEditor(*this);
-    e->setBounds(0, 0, 800, 800);
+    e->setBounds(0, 0, 600, 300);
     return e;
 }

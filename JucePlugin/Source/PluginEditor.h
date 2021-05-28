@@ -18,6 +18,27 @@
 class JucePluginAudioProcessorEditor  : public juce::AudioProcessorEditor
 {
 public:
+
+    class HostedWindow : public juce::DialogWindow
+    {
+    public:
+        JucePluginAudioProcessorEditor* parent;
+        explicit HostedWindow(JucePluginAudioProcessorEditor* parent):DialogWindow("Hosted Plugin", juce::Colour(100, 100, 100), true, false)
+        {
+            this->parent = parent;
+            setTitleBarButtonsRequired(juce::DocumentWindow::TitleBarButtons::closeButton,false);
+        }
+        void closeButtonPressed() override
+        {
+            //DialogWindow::closeButtonPressed();
+            parent->postCommandMessage(2);
+        }
+        ~HostedWindow()
+        {
+            SafeDelete(getContentComponent());
+        }
+    };
+
     PluginSelectWindow* psw;
     JucePluginAudioProcessorEditor(JucePluginAudioProcessor&);
     ~JucePluginAudioProcessorEditor() override;
@@ -32,14 +53,24 @@ public:
     juce::Button* toggleDbgBtn = nullptr;
     juce::Button* toggleBypassButton = nullptr;
     juce::Button* autoBypassButton = nullptr;
+    juce::Button* showPluginWindowToggleButton = nullptr;
     juce::String debugOutput;
-    juce::DialogWindow* pluginWindow = nullptr;
+    HostedWindow* pluginWindow = nullptr;
     void mouseDoubleClick(const juce::MouseEvent& event);
     void mouseDown(const juce::MouseEvent& event);
     void handleCommandMessage(int commandId);
     void initializePluginWindow();
-    void MinimisationStateChanged(bool state);
-    void ProcessorWait();
+
+    template <class T>
+    static void SafeDelete(T*& ptr) { if (ptr) delete ptr; ptr = nullptr; }
+    template <class T>
+    static void SafeDelete(T* &&ptr) { if (ptr) delete ptr;}
+
+    template <class T>
+    T* AddButtonWithText(const char* text);
+
+    void RefreshToggleButtonStates();
+
 private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.

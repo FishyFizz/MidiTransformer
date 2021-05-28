@@ -30,41 +30,30 @@ JucePluginAudioProcessorEditor::JucePluginAudioProcessorEditor (JucePluginAudioP
     debugShow->addMouseListener(this, true);
     addAndMakeVisible(debugShow);
 
-    selectScriptBtn = new juce::TextButton;
-    selectScriptBtn->addMouseListener(this,false);
-    selectScriptBtn->setButtonText("Select Script");
-    addAndMakeVisible(selectScriptBtn);
+    selectScriptBtn = AddButtonWithText<juce::TextButton>("open script");
+    
+    selectPluginBtn = AddButtonWithText<juce::TextButton>("open plugin");
 
-    selectPluginBtn = new juce::TextButton;
-    selectPluginBtn->addMouseListener(this, false);
-    selectPluginBtn->setButtonText("Select Plugin");
-    addAndMakeVisible(selectPluginBtn);
+    toggleDbgBtn = AddButtonWithText<juce::ToggleButton>("show dbgout");
+    toggleDbgBtn->setClickingTogglesState(false);
 
-    toggleDbgBtn = new juce::TextButton;
-    toggleDbgBtn->addMouseListener(this, false);
-    toggleDbgBtn->setButtonText(myprocessor->debugOutputEnabled ? "NoDBG" : "ShowDBG");
-    addAndMakeVisible(toggleDbgBtn);
+    toggleBypassButton = AddButtonWithText<juce::ToggleButton>("bypass");
+    toggleBypassButton->setClickingTogglesState(false);
 
-    toggleBypassButton = new juce::TextButton;
-    toggleBypassButton->addMouseListener(this, false);
-    toggleBypassButton->setButtonText(myprocessor->bypassed?"Enable":"Bypass");
-    addAndMakeVisible(toggleBypassButton);
+    autoBypassButton = AddButtonWithText<juce::ToggleButton>("autobypass");
+    autoBypassButton->setClickingTogglesState(false);
 
-    autoBypassButton = new juce::TextButton;
-    autoBypassButton->addMouseListener(this, false);
-    autoBypassButton->setButtonText(myprocessor->autoBypass ? "NoAutoBps" : "AutoBypass");
-    addAndMakeVisible(autoBypassButton);
+    showPluginWindowToggleButton = AddButtonWithText<juce::ToggleButton>("show plugin");
+    showPluginWindowToggleButton->setClickingTogglesState(false);
 
     initializePluginWindow();
+    RefreshToggleButtonStates();
 }
 
 JucePluginAudioProcessorEditor::~JucePluginAudioProcessorEditor()
 {
-    if (pluginWindow)
-    {
-        pluginWindow = nullptr;
-        delete pluginWindow;
-    }
+    SafeDelete(pluginWindow);
+    deleteAllChildren();
 }
 
 //==============================================================================
@@ -90,7 +79,7 @@ void JucePluginAudioProcessorEditor::resized()
         debugShow->setBounds(b.first);
 
     juce::Array<RectArranger> buttons;
-    buttons = b.second.EqualSplitHorizonal(5);
+    buttons = b.second.EqualSplitHorizonal(6);
     if (selectPluginBtn)
         selectPluginBtn->setBounds(buttons[0]);
     if(selectScriptBtn)
@@ -101,6 +90,8 @@ void JucePluginAudioProcessorEditor::resized()
         toggleDbgBtn->setBounds(buttons[3]);
     if (autoBypassButton)
         autoBypassButton->setBounds(buttons[4]);
+    if (showPluginWindowToggleButton)
+        showPluginWindowToggleButton->setBounds(buttons[5]);
     AudioProcessorEditor::resized();
 }
 
@@ -136,22 +127,6 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
     }
     else if (event.eventComponent == selectPluginBtn)
     {
-        //juce::WildcardFileFilter wildcardFilter("*.dll;*.vst3", juce::String(), "VST Plugin");
-        //juce::FileBrowserComponent browser(
-        //    juce::FileBrowserComponent::canSelectFiles,
-        //    juce::File(),
-        //    &wildcardFilter,
-        //    nullptr);
-
-        //juce::FileChooserDialogBox dialogBox("Select Plugin",
-        //    "",
-        //    browser,
-        //    false,
-        //    juce::Colours::lightgrey);
-
-        //while (!dialogBox.show());
-        //juce::String filename = browser.getSelectedFile(0).getFullPathName();
-            //Plugin select / Show hosted editor
         psw = new PluginSelectWindow;
         psw->enterModalState(true, nullptr, false);
         if (psw->runModalLoop())
@@ -160,39 +135,34 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
             initializePluginWindow();
         }
         delete psw;
-        //pluginWindow = new HostedPluginWindow(e,this);
-        //pluginWindow->setVisible(true);
-        //pluginWindow->addToDesktop();
-
-        //juce::DocumentWindow* tmp = new juce::DocumentWindow("", juce::Colour(127, 127, 127), 1);
-        //tmp->setVisible(true);
-        //tmp->addToDesktop();
     }
     else if (event.eventComponent == toggleDbgBtn)
     {
         debugOutput = "";
         myprocessor->debugOutput = "";
         postCommandMessage(1);
-        myprocessor->debugOutputEnabled = !myprocessor->debugOutputEnabled;
-        if (myprocessor->scriptInitialized)
-            myprocessor->tf->debugOutputEnabled = !myprocessor->tf->debugOutputEnabled;
-        toggleDbgBtn->setButtonText(myprocessor->debugOutputEnabled ? "NoDBG" : "ShowDBG");
+        myprocessor->setDbgOutEnable(!myprocessor->debugOutputEnabled);
     }
     else if (event.eventComponent == toggleBypassButton)
     {
         myprocessor->setBypassed(!myprocessor->bypassed);
-        toggleBypassButton->setButtonText(myprocessor->bypassed ? "Enable" : "Bypass");
     }
     else if (event.eventComponent == autoBypassButton)
     {
         myprocessor->setAutoBypass(!myprocessor->autoBypass);
-        autoBypassButton->setButtonText(myprocessor->autoBypass ? "NoAutoBps" : "AutoBypass");
+    }
+    else if (event.eventComponent == showPluginWindowToggleButton)
+    {
+        if (pluginWindow)
+            postCommandMessage(2);
+        else
+            initializePluginWindow();
     }
 }
 
 void JucePluginAudioProcessorEditor::handleCommandMessage(int commandId)
 {
-    if (commandId == 1)
+    if (commandId == 1) //Refresh dbgShow text
     {
         if (debugShow)
         {
@@ -201,30 +171,19 @@ void JucePluginAudioProcessorEditor::handleCommandMessage(int commandId)
             debugShow->scrollEditorToPositionCaret(0, debugShow->getHeight() - 30);
         }
     }   
-    else if (commandId == 2)
+    else if (commandId == 2) //close plugin window
     {
-        if (pluginWindow)
-        {
-            delete pluginWindow;
-            pluginWindow = nullptr;
-        }
-            
-        myprocessor->csWaitEditorThread.enter();
-        myprocessor->csWaitEditorThread.exit();
-    }
-    else if (commandId == 3)
-    {
-        if (pluginWindow)
-            pluginWindow->setMinimised(false);
-    }
-    else if (commandId == 4)
-    {
-        if (pluginWindow)
-            pluginWindow->setMinimised(true);
-    }
-    else if (commandId == 5)
+        SafeDelete(pluginWindow);
+        //myprocessor->waitCloseHostedEditor.signal();
+        RefreshToggleButtonStates();
+    }   
+    else if (commandId == 5) //initialize plugin window
     {
         initializePluginWindow();
+    }
+    else if (commandId == 6) //refresh toggle button states
+    {
+        RefreshToggleButtonStates();
     }
 }
 
@@ -232,30 +191,32 @@ void JucePluginAudioProcessorEditor::initializePluginWindow()
 {
     if (!myprocessor->pluginLoaded)
         return;
-    if (pluginWindow)
-    {
-        delete pluginWindow;
-        pluginWindow = nullptr;
-    }
-        
+    SafeDelete(pluginWindow);
     AudioProcessorEditor* e = myprocessor->hostedPlugin->createEditorIfNeeded();
-    auto tmp = new juce::DialogWindow("Hosted Plugin", juce::Colour(100, 100, 100), false, false);
+    auto tmp = new HostedWindow(this);
     tmp->setContentComponent(e, true, true);
     tmp->setVisible(true);
     tmp->setBounds(0, 0, 100, 100);
-    tmp->setTitleBarButtonsRequired(0, false);
     tmp->addToDesktop();
 
     pluginWindow = tmp;
+    RefreshToggleButtonStates();
 }
 
-void JucePluginAudioProcessorEditor::MinimisationStateChanged(bool state)
+void JucePluginAudioProcessorEditor::RefreshToggleButtonStates()
 {
-    if (pluginWindow)
-        pluginWindow->minimisationStateChanged(state);
+    autoBypassButton->setToggleState(myprocessor->autoBypass, juce::NotificationType::dontSendNotification);
+    toggleBypassButton->setToggleState(myprocessor->bypassed, juce::NotificationType::dontSendNotification);
+    toggleDbgBtn->setToggleState(myprocessor->debugOutputEnabled, juce::NotificationType::dontSendNotification);
+    showPluginWindowToggleButton->setToggleState(pluginWindow, juce::NotificationType::dontSendNotification);
 }
 
-void JucePluginAudioProcessorEditor::ProcessorWait()
+template <class T>
+T* JucePluginAudioProcessorEditor::AddButtonWithText(const char* text)
 {
-    myprocessor->csWaitEditorThread.enter();
+    T* tmp = new T;
+    tmp->addMouseListener(this, false);
+    tmp->setButtonText(text);
+    addAndMakeVisible(tmp);
+    return tmp;
 }

@@ -221,19 +221,7 @@ void JucePluginAudioProcessor::setStateInformation (const void* data, int sizeIn
 bool JucePluginAudioProcessor::initPlugin(juce::PluginDescription& const desc, const void* PluginChunk, int PluginChunkSize)
 {
     if (pluginLoaded)
-    {
-        pluginLoaded = false;
-        if (JucePluginAudioProcessorEditor* e = (JucePluginAudioProcessorEditor*)getActiveEditor())
-        {
-            e->ProcessorWait();
-            e->postCommandMessage(2);
-            csWaitEditorThread.enter();
-            csWaitEditorThread.exit();
-
-            //wait for editor destruction
-        }
-        hostedPlugin.release();
-    }
+        unloadPlugin();
         
     juce::VST3PluginFormat f3;
     hostedPlugin = f3.createInstanceFromDescription(desc, getSampleRate(), 512);
@@ -247,8 +235,6 @@ bool JucePluginAudioProcessor::initPlugin(juce::PluginDescription& const desc, c
     {
         if (PluginChunk != nullptr)
             hostedPlugin->setStateInformation(PluginChunk, PluginChunkSize);
-        if (auto e = createEditorIfNeeded())
-            e->postCommandMessage(5);
         this->desc = desc;
         pluginLoaded = true;
     }
@@ -259,10 +245,8 @@ void JucePluginAudioProcessor::unloadPlugin()
 {
     if (!pluginLoaded)
         return;
-    if (auto e = getActiveEditor())
-        e->postCommandMessage(2); //release hosted window
-    hostedPlugin.release();
     pluginLoaded = false;
+    tellEditorClosePluginEditorWait();
 }
 
 void JucePluginAudioProcessor::initScript(juce::String scriptfile = juce::String())
@@ -284,9 +268,40 @@ void JucePluginAudioProcessor::ReportLatency()
 
 void JucePluginAudioProcessor::setBypassed(bool b)
 {
+    if (bypassed == b)
+        return;
     bypassed = b;
     ReportLatency();
+    refreshEditorToggleButton();
 }
+
+void JucePluginAudioProcessor::setDbgOutEnable(bool b)
+{
+    if (debugOutputEnabled == b)
+        return;
+
+    debugOutputEnabled = b;
+    if(tf && scriptInitialized)
+        tf->debugOutputEnabled = b;
+    refreshEditorToggleButton();
+}
+
+void JucePluginAudioProcessor::refreshEditorToggleButton()
+{
+    if (juce::AudioProcessorEditor* e = getActiveEditor())
+        e->postCommandMessage(6); //refresh toggle buttons 
+}
+
+void JucePluginAudioProcessor::tellEditorClosePluginEditorWait()
+{
+    if (JucePluginAudioProcessorEditor* e = (JucePluginAudioProcessorEditor*)getActiveEditor())
+    {
+        e->SafeDelete(e->pluginWindow);
+        //e->postCommandMessage(2);
+        //waitCloseHostedEditor.wait();
+    }
+}
+
 
 void JucePluginAudioProcessor::setScriptInitialized(bool b)
 {
@@ -300,7 +315,10 @@ void JucePluginAudioProcessor::luaFail()
 
 void JucePluginAudioProcessor::setAutoBypass(bool b)
 {
+    if (autoBypass == b)
+        return;
     autoBypass = b;
+    refreshEditorToggleButton();
 }
 
 void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)

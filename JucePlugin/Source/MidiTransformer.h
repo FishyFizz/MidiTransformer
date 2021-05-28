@@ -106,4 +106,3 @@ public:
     long long advanceCounter = 0;
     bool debugOutputEnabled = true;
 };
-

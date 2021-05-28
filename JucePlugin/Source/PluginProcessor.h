@@ -62,12 +62,18 @@ public:
     void initScript(juce::String scriptfile);
     juce::String debugOutput;
     void ReportLatency();
-    void setBypassed(bool b);
+    
     void setScriptInitialized(bool b);
-    void luaFail();
     void setAutoBypass(bool b);
+    void setBypassed(bool b);
+    void setDbgOutEnable(bool b);
 
-    juce::CriticalSection csWaitEditorThread;
+    void refreshEditorToggleButton();
+
+    juce::WaitableEvent waitCloseHostedEditor;
+    void tellEditorClosePluginEditorWait();
+
+    void luaFail();
     //==============================================================================
     bool scriptInitialized = false;
     bool pluginLoaded = false;

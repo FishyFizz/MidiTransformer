@@ -408,11 +408,15 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         JucePluginAudioProcessorEditor* editor;
         if (editor = (JucePluginAudioProcessorEditor*)getActiveEditor())
         {
-            bool refreshText = tf->debugMessages.size() || debugMessages.size();
-            while (tf->debugMessages.size())
+            bool refreshText = debugMessages.size();
+            if (scriptInitialized && tf)
             {
-                debugOutput += tf->debugMessages[0] + "\n";
-                tf->debugMessages.remove(0);
+                refreshText |= tf->debugMessages.size();
+                while (tf->debugMessages.size())
+                {
+                    debugOutput += tf->debugMessages[0] + "\n";
+                    tf->debugMessages.remove(0);
+                }
             }
             while (debugMessages.size())
             {

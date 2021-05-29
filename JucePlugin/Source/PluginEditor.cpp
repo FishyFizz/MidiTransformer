@@ -172,7 +172,7 @@ void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
     }
     else if (event.eventComponent == toggleBypassButton)
     {
-        myprocessor->setBypassed(!myprocessor->bypassed);
+        myprocessor->setUserBypassState(!myprocessor->bypassed);
     }
     else if (event.eventComponent == autoBypassButton)
     {

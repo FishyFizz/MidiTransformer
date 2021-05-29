@@ -25,7 +25,7 @@ JucePluginAudioProcessor::JucePluginAudioProcessor()
 {
     SyncObject = new MidiTransformerIPCSync(this);
     SyncObject->startThread();
-    bypassTimerThread = new TimedBypass(this, 500, true);
+    bypassTimerThread = new TimedSetAutoBypassState(this, 500, true);
 }
 
 
@@ -270,27 +270,11 @@ void JucePluginAudioProcessor::ReportLatency()
 
 void JucePluginAudioProcessor::setBypassed(bool b, bool notifyOtherInstances)
 {
-    bool calledFromTimedBypass = false;
-    if (bypassTimerThread->isThreadRunning() && bypassTimerThread->getThreadId() == juce::Thread::getCurrentThreadId())
-    {
-        calledFromTimedBypass = true;
-    }
-    if (bypassTimerThread->isThreadRunning() && !calledFromTimedBypass)
-    {
-        bypassTimerThread->stopThread(0);
-    }
-        
     if (bypassed == b)
         return;
     bypassed = b;
     ReportLatency();
     refreshEditorToggleButton();
-    if (notifyOtherInstances)
-    {
-        MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
-        p.bypassed = bypassed;
-        SyncObject->overwrite(p);
-    }
 }
 
 void JucePluginAudioProcessor::setDbgOutEnable(bool b)
@@ -302,6 +286,46 @@ void JucePluginAudioProcessor::setDbgOutEnable(bool b)
     if(tf && scriptInitialized)
         tf->debugOutputEnabled = b;
     refreshEditorToggleButton();
+}
+
+inline void JucePluginAudioProcessor::refreshBypassState(bool notifyOtherInstances)
+{
+    bool selected = autoBypass ? autoBypassState : userBypassState;
+    if (bypassed != selected)
+        setBypassed(selected, notifyOtherInstances);
+}
+
+inline void JucePluginAudioProcessor::setUserBypassState(bool b, bool notifyOtherInstances)
+{
+    if (userBypassState == b)
+        return;
+    userBypassState = b;
+    if (notifyOtherInstances)
+    {
+        MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
+        p.userBypassState = userBypassState;
+        SyncObject->overwrite(p);
+    }
+    refreshBypassState(notifyOtherInstances);
+}
+
+inline void JucePluginAudioProcessor::setAutoBypassState(bool b, bool notifyOtherInstances)
+{
+    bool calledFromTimedBypass = false;
+    if (bypassTimerThread->isThreadRunning() && bypassTimerThread->getThreadId() == juce::Thread::getCurrentThreadId())
+    {
+        calledFromTimedBypass = true;
+    }
+    if (bypassTimerThread->isThreadRunning() && !calledFromTimedBypass)
+    {
+        bypassTimerThread->stopThread(0);
+    }
+
+    if (autoBypassState != b)
+    {
+        autoBypassState = b;
+        refreshBypassState(notifyOtherInstances);
+    }
 }
 
 void JucePluginAudioProcessor::refreshEditorToggleButton()
@@ -335,11 +359,11 @@ void JucePluginAudioProcessor::SyncPropertiesUpdated(const MidiTransformerIPCSyn
 {
     if (autoBypass != properties.autoBypass)
         setAutoBypass(properties.autoBypass, false);
-    if (bypassed != properties.bypassed)
-        setBypassed(properties.bypassed, false);
+    if (userBypassState != properties.userBypassState)
+        setUserBypassState(properties.userBypassState, false);
     if (debugOutputEnabled)
     {
-        debugMessages.add(juce::String("[SYNC] IPC Sync: autobypass = ") + juce::String((int)properties.autoBypass) + " , instances = " + juce::String(properties.instancesCount)+" , bypassed = "+juce::String((int)properties.bypassed));
+        debugMessages.add(juce::String("[SYNC] IPC Sync: autobypass = ") + juce::String((int)properties.autoBypass) + " , instances = " + juce::String(properties.instancesCount)+" , userbps = "+juce::String((int)properties.userBypassState));
         if (auto e = getActiveEditor())
             e->postCommandMessage(1);//refresh dbgout
     }
@@ -350,7 +374,7 @@ void JucePluginAudioProcessor::setAutoBypass(bool b,bool notifyOtherInstances)
     if (autoBypass == b)
         return;
     autoBypass = b;
-    refreshEditorToggleButton();
+    refreshBypassState();
     if (notifyOtherInstances)
     {
         MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;

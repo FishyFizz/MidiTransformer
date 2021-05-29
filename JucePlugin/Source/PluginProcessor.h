@@ -16,7 +16,7 @@ using namespace boost::interprocess;
 //==============================================================================
 /**
 */
-class JucePluginAudioProcessor  : public juce::AudioProcessor
+class JucePluginAudioProcessor  : public juce::AudioProcessor 
 {
 public:
     //==============================================================================
@@ -70,13 +70,18 @@ public:
     void setAutoBypass(bool b, bool notifyOtherInstances = true);
     void setBypassed(bool b, bool notifyOtherInstances = true);
     void setDbgOutEnable(bool b);
-    class TimedBypass :public juce::Thread
+
+    void refreshBypassState(bool notifyOtherInstances = false);
+    void setUserBypassState(bool b, bool notifyOtherInstances = true);
+    void setAutoBypassState(bool b, bool notifyOtherInstances = false);
+
+    class TimedSetAutoBypassState :public juce::Thread
     {
     public:
         int timerMs;
         JucePluginAudioProcessor* parent;
         bool newstate;
-        TimedBypass(JucePluginAudioProcessor* p, int t, bool s) :Thread("TimedBypass")
+        TimedSetAutoBypassState(JucePluginAudioProcessor* p, int t, bool s) :Thread("TimedBypass")
         {
             timerMs = t;
             parent = p;
@@ -85,10 +90,10 @@ public:
         void run() override
         {
             Thread::sleep(timerMs);
-            parent->setBypassed(newstate);
+            parent->setAutoBypassState(newstate);
         }
     };
-    TimedBypass* bypassTimerThread = nullptr;
+    TimedSetAutoBypassState* bypassTimerThread = nullptr;
 
     void refreshEditorToggleButton();
 
@@ -103,6 +108,8 @@ public:
     bool isPlayingLastState = false;
     bool debugOutputEnabled = true;
     bool bypassed = false;
+    bool autoBypassState;
+    bool userBypassState;
     juce::PluginDescription desc;
     juce::String scriptFileName;
 
@@ -117,17 +124,19 @@ public:
         struct MidiTransformerSyncedProperties
         {
             bool autoBypass;
-            bool bypassed;
             int instancesCount;
             ThreadID threadBroadcaster; // to identify if the change comes from the thread itself.
 
             // when received a boradcast from other instance, increase this.
             // when all instances have reported received the broadcast, the broadcaster might do some spesified job
-            int broadcastResponseCounter; 
+            int broadcastResponseCounter;
+            int userBypassState;
                 
             bool operator!=(const MidiTransformerSyncedProperties& b)
             {
-                return autoBypass != b.autoBypass || instancesCount != b.instancesCount || bypassed != b.bypassed;
+                return autoBypass != b.autoBypass || 
+                    instancesCount != b.instancesCount || 
+                    userBypassState != b.userBypassState;
             }
         };
 
@@ -160,7 +169,7 @@ public:
                 mappedProperties = (MidiTransformerSyncedProperties *) memmap.get_address();
 
                 // write data
-                properties = { parent->autoBypass,parent->bypassed,1,tid,1};
+                properties = { parent->autoBypass,1,tid,1,parent->userBypassState};
                 *mappedProperties = properties;
             }
             else

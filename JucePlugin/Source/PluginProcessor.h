@@ -68,7 +68,7 @@ public:
     
     void setScriptInitialized(bool b);
     void setAutoBypass(bool b, bool notifyOtherInstances = true);
-    void setBypassed(bool b);
+    void setBypassed(bool b, bool notifyOtherInstances = true);
     void setDbgOutEnable(bool b);
 
     void refreshEditorToggleButton();
@@ -97,10 +97,17 @@ public:
         struct MidiTransformerSyncedProperties
         {
             bool autoBypass;
+            bool bypassed;
             int instancesCount;
+            ThreadID threadBroadcaster; // to identify if the change comes from the thread itself.
+
+            // when received a boradcast from other instance, increase this.
+            // when all instances have reported received the broadcast, the broadcaster might do some spesified job
+            int broadcastResponseCounter; 
+                
             bool operator!=(const MidiTransformerSyncedProperties& b)
             {
-                return autoBypass != b.autoBypass || instancesCount != b.instancesCount;
+                return autoBypass != b.autoBypass || instancesCount != b.instancesCount || bypassed != b.bypassed;
             }
         };
 
@@ -108,15 +115,20 @@ public:
         MidiTransformerSyncedProperties* mappedProperties;
         shared_memory_object memobj;
         mapped_region memmap;
+        ThreadID tid;
         bool suspend = false;
         void overwrite(MidiTransformerSyncedProperties& const newproperties)
         {
+            //in case if it's called from another thread, then suspend the sync loop
+            suspend = true;
             properties = newproperties;
+            properties.threadBroadcaster = tid;
             *mappedProperties = properties;
+            suspend = false;
         }
         void run() override
         {
-            
+            tid = getThreadId();
             memobj = shared_memory_object(open_or_create, "MidiTransformerIpcSync", read_write);
             offset_t memsize;
             memobj.get_size(memsize);
@@ -128,7 +140,7 @@ public:
                 mappedProperties = (MidiTransformerSyncedProperties *) memmap.get_address();
 
                 // write data
-                properties = { parent->autoBypass,1 };
+                properties = { parent->autoBypass,parent->bypassed,1,tid,1};
                 *mappedProperties = properties;
             }
             else
@@ -144,6 +156,8 @@ public:
                 if (suspend) continue;
                 if (*mappedProperties != properties)
                 {
+                    if (mappedProperties->threadBroadcaster != tid)
+                        mappedProperties->broadcastResponseCounter++;
                     properties = *mappedProperties;
                     parent->SyncPropertiesUpdated(properties);
                 }

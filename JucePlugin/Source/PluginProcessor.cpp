@@ -267,13 +267,19 @@ void JucePluginAudioProcessor::ReportLatency()
     setLatencySamples((!bypassed && scriptInitialized ? 44100 : 0));
 }
 
-void JucePluginAudioProcessor::setBypassed(bool b)
+void JucePluginAudioProcessor::setBypassed(bool b, bool notifyOtherInstances)
 {
     if (bypassed == b)
         return;
     bypassed = b;
     ReportLatency();
     refreshEditorToggleButton();
+    if (notifyOtherInstances)
+    {
+        MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
+        p.bypassed = bypassed;
+        SyncObject->overwrite(p);
+    }
 }
 
 void JucePluginAudioProcessor::setDbgOutEnable(bool b)
@@ -318,9 +324,11 @@ void JucePluginAudioProcessor::SyncPropertiesUpdated(const MidiTransformerIPCSyn
 {
     if (autoBypass != properties.autoBypass)
         setAutoBypass(properties.autoBypass, false);
+    if (bypassed != properties.bypassed)
+        setBypassed(properties.bypassed, false);
     if (debugOutputEnabled)
     {
-        debugMessages.add(juce::String("[SYNC] IPC Sync: autobypass = ") + juce::String((int)properties.autoBypass) + " , instances = " + juce::String(properties.instancesCount));
+        debugMessages.add(juce::String("[SYNC] IPC Sync: autobypass = ") + juce::String((int)properties.autoBypass) + " , instances = " + juce::String(properties.instancesCount)+" , bypassed = "+juce::String((int)properties.bypassed));
         if (auto e = getActiveEditor())
             e->postCommandMessage(1);//refresh dbgout
     }
@@ -336,9 +344,7 @@ void JucePluginAudioProcessor::setAutoBypass(bool b,bool notifyOtherInstances)
     {
         MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
         p.autoBypass = autoBypass;
-        SyncObject->suspend = true;
         SyncObject->overwrite(p);
-        SyncObject->suspend = false;
     }
 }
 
@@ -438,9 +444,7 @@ JucePluginAudioProcessor::~JucePluginAudioProcessor()
     {
         MidiTransformerIPCSync::MidiTransformerSyncedProperties p = SyncObject->properties;
         p.instancesCount--;
-        SyncObject->suspend = true;
         SyncObject->overwrite(p);
-        SyncObject->suspend = false;
         SyncObject->signalThreadShouldExit();
         SyncObject->waitForThreadToExit(1000);
         delete SyncObject;

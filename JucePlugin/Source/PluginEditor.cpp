@@ -121,9 +121,12 @@ void JucePluginAudioProcessorEditor::resized()
 
 void JucePluginAudioProcessorEditor::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    myprocessor->debugOutput = "";
-    debugOutput = "";
-    postCommandMessage(1);
+    if (event.eventComponent == debugShow)
+    {
+        myprocessor->debugOutput = "";
+        debugOutput = "";
+        postCommandMessage(1);
+    }
 }
 
 void JucePluginAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)

@@ -25,6 +25,7 @@ JucePluginAudioProcessor::JucePluginAudioProcessor()
 {
     SyncObject = new MidiTransformerIPCSync(this);
     SyncObject->startThread();
+    bypassTimerThread = new TimedBypass(this, 500, true);
 }
 
 
@@ -269,6 +270,16 @@ void JucePluginAudioProcessor::ReportLatency()
 
 void JucePluginAudioProcessor::setBypassed(bool b, bool notifyOtherInstances)
 {
+    bool calledFromTimedBypass = false;
+    if (bypassTimerThread->isThreadRunning() && bypassTimerThread->getThreadId() == juce::Thread::getCurrentThreadId())
+    {
+        calledFromTimedBypass = true;
+    }
+    if (bypassTimerThread->isThreadRunning() && !calledFromTimedBypass)
+    {
+        bypassTimerThread->stopThread(0);
+    }
+        
     if (bypassed == b)
         return;
     bypassed = b;
@@ -384,7 +395,17 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         {
             juce::AudioPlayHead::CurrentPositionInfo inf;
             ph->getCurrentPosition(inf);
-            setBypassed(!inf.isPlaying);
+            
+            //host stopped playing.
+            if (isPlayingLastState && !inf.isPlaying)
+            {
+                bypassTimerThread->startThread();
+            }
+            else if (!isPlayingLastState && inf.isPlaying)
+            {
+                setBypassed(false);
+            }
+            isPlayingLastState = inf.isPlaying;
         }
     }
 
@@ -449,6 +470,8 @@ JucePluginAudioProcessor::~JucePluginAudioProcessor()
         SyncObject->waitForThreadToExit(1000);
         delete SyncObject;
     }
+    if (bypassTimerThread)
+        delete bypassTimerThread;
 }
 
 juce::AudioProcessorEditor* JucePluginAudioProcessor::createEditor()

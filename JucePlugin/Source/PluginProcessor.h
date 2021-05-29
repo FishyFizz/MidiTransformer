@@ -70,6 +70,25 @@ public:
     void setAutoBypass(bool b, bool notifyOtherInstances = true);
     void setBypassed(bool b, bool notifyOtherInstances = true);
     void setDbgOutEnable(bool b);
+    class TimedBypass :public juce::Thread
+    {
+    public:
+        int timerMs;
+        JucePluginAudioProcessor* parent;
+        bool newstate;
+        TimedBypass(JucePluginAudioProcessor* p, int t, bool s) :Thread("TimedBypass")
+        {
+            timerMs = t;
+            parent = p;
+            newstate = s;
+        }
+        void run() override
+        {
+            Thread::sleep(timerMs);
+            parent->setBypassed(newstate);
+        }
+    };
+    TimedBypass* bypassTimerThread = nullptr;
 
     void refreshEditorToggleButton();
 
@@ -81,6 +100,7 @@ public:
     bool scriptInitialized = false;
     bool pluginLoaded = false;
     bool autoBypass = true;
+    bool isPlayingLastState = false;
     bool debugOutputEnabled = true;
     bool bypassed = false;
     juce::PluginDescription desc;

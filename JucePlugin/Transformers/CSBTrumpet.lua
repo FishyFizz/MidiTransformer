@@ -401,7 +401,7 @@ function ProcessShortNote(nid)
 end
 function SustainNoteOff(nid)
 	--Process sustain note off
-	PostMsg(NOTEOFF,nid,value,0)
+	PostMsg(NOTEOFF,NotesList[nid].NoteNum,value,0)
 
 	DebugMessage(StrFormatLen("NOTE OFF",15)..NoteInfoStr(nid))
 end
@@ -502,7 +502,9 @@ function message_income(msgtype,control,value,assignid)
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
 		--Process switches
+		local isSwitches = false
 		if control == EnableSwitchCtrl then
+			isSwitches = true
 			TransformEnabled = BoolController(value)
 			--clean up when bypassed
 			if not TransformEnabled then
@@ -511,13 +513,18 @@ function message_income(msgtype,control,value,assignid)
 				LastNote = -1
 			end
 		elseif control == LegatoSwitchCtrl then
+			isSwitches = true
 			LegatoModeOn = BoolController(value)
 		elseif control == MarcatoSwitchCtrl then
+			isSwitches = true
 			MarcatoModeOn = BoolController(value)
 		elseif control == ForceLengthTypeCtrl then
+			isSwitches = true
 			ForceLength = BoolController(value)
 		end
-		return
+		if isSwitches then
+			return
+		end
 	end --return after switch is processed
 
 	if not TransformEnabled then --Bypassed, forward NoteOn NoteOff and Controllers

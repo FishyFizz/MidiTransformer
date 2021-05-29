@@ -34,6 +34,7 @@ public:
         int countdownSmpls;
         int assignObjectId;
     };
+
     std::array<int, 128> ActiveNoteIdTable;
 
     //Offers note trimming in a first-in-first-out method
@@ -75,7 +76,6 @@ public:
     void AdvanceTime(long samples);
     int AdvanceToNextNotifyEvent();
     void InsertToQueue(std::list<TFScriptEvent>& queue, TFScriptEvent& const e);
-
     bool autoBypassSwitch = true;
     void setAutoBypass(bool b);
     //Callbacks and related utility for Lua

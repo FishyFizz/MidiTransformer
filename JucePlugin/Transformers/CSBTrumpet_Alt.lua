@@ -85,8 +85,31 @@ function init_framework()
 	function EnableStringIndexing()
 		local mt = getmetatable(string)
 	end
-	function GetMidiNoteNum(name,sharpflat,octave)
+	function _GetMidiNoteNum(name,sharpflat,octave)
 		return noteNumTable[name] + marks[sharpflat] + (octave*12+24)
+	end
+	function NoteNum(name)
+		name = string.lower(name)
+		local ch = at(name,1)
+		local sharpflat = ' '
+		local oct = ''
+		local tmp = at(name,2)
+
+		local octIndex
+		if tmp == '#' or tmp == 'b' then
+			sharpflat = tmp
+			octIndex = 3
+		else
+			octIndex = 2
+		end
+
+		if at(name,octIndex) == '-' then
+			oct = -at(name,octIndex+1)
+		else
+			oct = at(name,octIndex)
+		end
+
+		return _GetMidiNoteNum(ch,sharpflat,oct)
 	end
 	function GetNoteName(num, formatlen)
 		local tmp = noteNameTable[(num%12+1)]..(math.floor(num/12)-2)
@@ -100,9 +123,9 @@ function init_framework()
 	end
 	
 	ksw_len		=	MsSmps(1)
-	function PostKeyEvt(notename,mark,oct,velo,offset) 
-		post_message(thispointer,NOTEON,GetMidiNoteNum(notename,mark,oct),velo,offset)
-		post_message(thispointer,NOTEOFF,GetMidiNoteNum(notename,mark,oct),velo,offset+ksw_len)
+	function PostKeyEvt(notename,velo,offset) 
+		post_message(thispointer,NOTEON,NoteNum(notename),velo,offset)
+		post_message(thispointer,NOTEOFF,NoteNum(notename),velo,offset+ksw_len)
 	end
 	function PostControllerEvt(cc,val,offset)
 		post_message(thispointer,CONTROLLER,cc,val,offset)
@@ -129,11 +152,10 @@ init_framework()
 function init_utils()
 
 	--Legato Transition Constants
-	lgt_fast 			= 	150
-	lgt_medium 			= 	255
-	lgt_gliss			=	255
-	lgt_slow    		=   300
-	lgt_mleg			=	55
+	lgt_fast 			= 	156
+	lgt_medium 			= 	185
+	lgt_atkfast			=	50
+	lgt_mleg			=	101
 	--Legato Follow Tolerance
 	trs_lgt_continue 	= MsSmps(3)
 	--Legato Overlap Constants
@@ -141,12 +163,12 @@ function init_utils()
 	mlgt_overlap		= 10
 
 	--Attack Compensation Constants
-	spicc_atk		=	80
-	stctsm_atk		=	80
-	stac_atk		=	65
-	sfz_atk			=	40
-	sus_atk			=	45
-	mleg_atk		= 	60
+	spicc_atk			=	75
+	stctsm_atk			=	55
+	stac_atk			=	75
+	sfz_atk				=	70
+	sus_atk				=	70
+	mleg_atk			= 	70
 	--Release Compensation Constants
 	lgt_release			=	80
 	
@@ -212,6 +234,38 @@ function init_utils()
 	PlayheadPos			= 0
 
 	--Script Control Definition
+
+	--Always make legato variant = primary + 1
+	--Always make legato variant ODD, primary EVEN
+	--For reason, see UpdateSelectedTech()
+	Techs = {
+		sustain 	= 2,
+		legato		= 3,
+
+		shortSfz	= 4,
+		shortStac	= 5,
+		shortStctsm = 6,
+		shortSpicc	= 7,
+
+		marcato 	= 8,
+		mlegato		= 9,
+
+		tremsus		= 10,
+		tremlgt		= 11,
+
+		mutesus		= 12,
+		muteleg		= 13,
+		muteshrt	= 14,
+
+		trillsus	= 16,
+		trilllgt	= 17,
+
+		synctrem	= 18,
+
+		rips		= 19
+	}
+	CurrentSelectedTech 	= 0
+
 	EnableSwitchCtrl 		= 4
 	LegatoSwitchCtrl		= 5
 	MarcatoSwitchCtrl		= 6
@@ -220,8 +274,7 @@ function init_utils()
 	TransformEnabled		= true
 	MarcatoModeOn			= false
 	ForceLength				= 0 		-- 1 = Force Long
-
-
+	
 	--Triage Functions
 	function chk_len_spicc(smps) 
 		return smps<trs_stctsm
@@ -237,18 +290,12 @@ function init_utils()
 	end
 
 	function chk_vel_lgt_fast(vel)
-		return 100<vel
+		return 64<=vel
 	end
 	function chk_vel_lgt_medium(vel)
-		return 64<vel and vel<=100
+		return vel<=63
 	end
-	function chk_vel_lgt_slow(vel)
-		return 20<vel and vel<=64
-	end
-	function chk_vel_lgt_gliss(vel)
-		return vel<=20
-	end
-
+	
 	function chk_marcato_mode()
 		return MarcatoModeOn
 	end
@@ -257,36 +304,36 @@ function init_utils()
 	
 	--Keyswitch Functions
 	function switch_to_spicc(eventoffset) 
-		PostKeyEvt('f',' ','0',127,eventoffset)
+		PostKeyEvt('f0',127,eventoffset)
 		PostControllerEvt(1,1,eventoffset+MsSmps(keysw_lead/2))
 	end
 	function switch_to_stctsm(eventoffset) 
-		PostKeyEvt('f',' ','0',127,eventoffset)
+		PostKeyEvt('f0',127,eventoffset)
 		PostControllerEvt(1,40,eventoffset+MsSmps(keysw_lead/2))
 	end
 	function switch_to_stac(eventoffset)
-		PostKeyEvt('f',' ','0',127,eventoffset)
+		PostKeyEvt('f0',127,eventoffset)
 		PostControllerEvt(1,80,eventoffset+MsSmps(keysw_lead/2))
 	end
 	function switch_to_sfz(eventoffset)
-		PostKeyEvt('f',' ','0',127,eventoffset)
+		PostKeyEvt('f0',127,eventoffset)
 		PostControllerEvt(1,127,eventoffset+MsSmps(keysw_lead/2))
 	end
 	function switch_to_lgt(eventoffset)
-		PostKeyEvt('c',' ','0',127,eventoffset)
-		PostKeyEvt('b','b','0',127,eventoffset+MsSmps(1))
+		PostKeyEvt('c0',127,eventoffset)
+		PostKeyEvt('bb0',127,eventoffset+MsSmps(1))
 	end
 	function switch_to_sustain(eventoffset)
-		PostKeyEvt('c',' ','0',127,eventoffset)
-		PostKeyEvt('b','b','0',1,eventoffset+MsSmps(1))
+		PostKeyEvt('c0',127,eventoffset)
+		PostKeyEvt('bb0',1,eventoffset+MsSmps(1))
 	end
 	function switch_to_mlgt(eventoffset)
-		PostKeyEvt('f','#','0',127,eventoffset)
-		PostKeyEvt('b','b','0',127,eventoffset+MsSmps(1))
+		PostKeyEvt('f#0',127,eventoffset)
+		PostKeyEvt('bb0',127,eventoffset+MsSmps(1))
 	end
 	function switch_to_marcato(eventoffset)
-		PostKeyEvt('f','#','0',127,eventoffset)
-		PostKeyEvt('b','b','0',1,eventoffset+MsSmps(1))
+		PostKeyEvt('f#0',127,eventoffset)
+		PostKeyEvt('bb0',1,eventoffset+MsSmps(1))
 	end
 	
 	--Triage Tables (sorted by priority)
@@ -309,9 +356,7 @@ function init_utils()
 	legatoSpeedTriageTable = {
 		[1] = { chk_marcato_mode 	, lgt_mleg 		, mlgt_overlap	},
 		[2] = { chk_vel_lgt_fast 	, lgt_fast 		, lgt_overlap	},
-		[3] = { chk_vel_lgt_medium 	, lgt_medium 	, lgt_overlap	},
-		[4] = { chk_vel_lgt_slow 	, lgt_slow 		, lgt_overlap	},
-		[5] = { chk_vel_lgt_gliss	, lgt_gliss 	, lgt_overlap	},
+		[3] = { chk_vel_lgt_medium 	, lgt_medium 	, lgt_overlap	}
 	}
 	
 	legatoAttackTriageTable = {
@@ -390,6 +435,7 @@ end
 
 function init_script()
 	init_utils()
+	CurrentSelectedTech = 0
 	DebugMessage("script initialized, samplerate = ", samplerate)
 end
 
@@ -403,14 +449,14 @@ function ProcessShortNote(nid)
 	local keyswFunc = triageItem[3]
 
 	keyswFunc(NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
-	PostMsg(NOTEON,control,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
-	PostMsg(NOTEOFF,control,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
+	PostMsg(NOTEOFF,NotesList[nid].NoteNum,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
 	
 	DebugMessage(StrFormatLen("SHORT ON",15)..NoteInfoStr(nid))
 end
 function SustainNoteOff(nid)
 	--Process sustain note off
-	PostMsg(NOTEOFF,nid,value,0)
+	PostMsg(NOTEOFF,NotesList[nid].NoteNum,value,0)
 
 	DebugMessage(StrFormatLen("NOTE OFF",15)..NoteInfoStr(nid))
 end
@@ -507,11 +553,115 @@ function NoteEnterLengthPendingState(nid)	--return : int timerID
 	return tid 
 end
 
+--TODO
+function chk_cc1_sfz()
+
+shortNoteCC1TriageTable = {
+	[1] = { chk_cc1_spicc 	, 'shortSpicc'	},
+	[2]	= { chk_cc1_stac 	, 'shortStac'	},
+	[3] = { chk_cc1_stctsm	, 'shortStctsm'	},
+	[4] = { chk_cc1_sfz		, 'shortSfz'	}
+}
+
+primaryKsws = 
+{
+	[NoteNum('c0')] 	= 'sustain',
+	[NoteNum('c#0')]	= 'mutesus',
+	[NoteNum('d0')]		= 'synctrem',
+	[NoteNum('d#0')]	= 'trillsus',
+	[NoteNum('e0')]		= 'tremsus',
+	[NoteNum('f0')]		= 'shortSfz',
+	[NoteNum('f#0')]	= 'marcato',
+	[NoteNum('g0')]		= 'rips'
+}
+
+techHasLgtVariant = 
+{
+	sustain 	= true,
+	legato		= true,
+
+	marcato 	= true,
+	mlegato		= true,
+
+	tremsus		= true,
+	tremlgt		= true,
+
+	mutesus		= true,
+	muteleg		= true,
+
+	trillsus	= true,
+	trilllgt	= true,
+}
+
+techIsVarilengthShort = 
+{
+	shortSfz	= true,
+	shortStac	= true,
+	shortStctsm = true,
+	shortSpicc	= true,
+}
+
+secondaryKsws =
+{
+	[NoteNum('bb0')] 	= 'legato_control'
+}
+
+lastUsedShortType = Techs.shortSfz
+
+--TODO
+function UpdateSelectedTech(isNote, control, val) -- isNote = false means control represents a CC
+	if isNote then
+		local newTech = primaryKsws[control]
+		if newTech ~= nil then --newTech exist in primaryKsws, means the note is a primary keyswitch
+			if newTech == 'shortSfz' then
+				CurrentSelectedTech = lastUsedShortType
+				return
+			else if newTech == 'synctrem' or newTech == 'rips' then
+				CurrentSelectedTech = newTech
+			else
+				CurrentSelectedTech = newTech
+				if LegatoModeOn then
+					--Always make legato variant = primary + 1
+					CurrentSelectedTech = CurrentSelectedTech + 1
+				end
+
+				--specially...
+				if newTech == 'mutesus' and val<64 then
+					CurrentSelectedTech = Techs.muteshrt
+				end
+			end
+		else --newTech is empty, this is a secondary keyswitch
+			local secondaryType = secondaryKsws[control]
+			if secondaryType == 'legato_control' then
+				local newLgtModeOn = BoolController(val)
+				if newLgtModeOn == LegatoModeOn then
+					return --nothing changed, skip
+				end
+				LegatoModeOn = newLgtModeOn
+				if techHasLgtVariant[CurrentSelectedTech] then
+					--Always make legato variant ODD, primary EVEN
+					CurrentSelectedTech = CurrentSelectedTech - CurrentSelectedTech & 1 --return to primary
+					if LegatoModeOn then
+						CurrentSelectedTech = CurrentSelectedTech + 1 --set legato variant
+					end
+				end
+			end
+		end
+
+	else
+		if control == 1 and techIsVarilengthShort[CurrentSelectedTech] then
+		end
+	end
+end
+
+--TODO
 function message_income(msgtype,control,value,assignid)
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
 		--Process switches
+		local isSwitches = false
 		if control == EnableSwitchCtrl then
+			isSwitches = true
 			TransformEnabled = BoolController(value)
 			--clean up when bypassed
 			if not TransformEnabled then
@@ -519,14 +669,16 @@ function message_income(msgtype,control,value,assignid)
 				TimersList = {}
 				LastNote = -1
 			end
-		elseif control == LegatoSwitchCtrl then
-			LegatoModeOn = BoolController(value)
-		elseif control == MarcatoSwitchCtrl then
-			MarcatoModeOn = BoolController(value)
-		elseif control == ForceLengthTypeCtrl then
-			ForceLength = BoolController(value)
 		end
-		return
+
+		--always update technique state
+		if control == 1 then
+
+		end
+
+		if isSwitches then
+			return
+		end
 	end --return after switch is processed
 
 	if not TransformEnabled then --Bypassed, forward NoteOn NoteOff and Controllers

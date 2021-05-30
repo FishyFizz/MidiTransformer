@@ -394,8 +394,8 @@ function ProcessShortNote(nid)
 	local keyswFunc = triageItem[3]
 
 	keyswFunc(NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection)-MsSmps(keysw_lead))
-	PostMsg(NOTEON,control,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
-	PostMsg(NOTEOFF,control,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
+	PostMsg(NOTEON,NotesList[nid].NoteNum,NotesList[nid].NoteVelo,NotesList[nid].NoteOnTime - PlayheadPos- MsSmps(shortCorrection))
+	PostMsg(NOTEOFF,NotesList[nid].NoteNum,64,NotesList[nid].NoteOnTime - PlayheadPos - MsSmps(shortCorrection) + MsSmps(short_uniform_len))
 	
 	DebugMessage(StrFormatLen("SHORT ON",15)..NoteInfoStr(nid))
 end

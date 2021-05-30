@@ -25,7 +25,7 @@ JucePluginAudioProcessor::JucePluginAudioProcessor()
 {
     SyncObject = new MidiTransformerIPCSync(this);
     SyncObject->startThread();
-    bypassTimerThread = new TimedSetAutoBypassState(this, 500, true);
+    bypassTimerThread = new TimedSetAutoBypassState(this, 1000, true);
 }
 
 
@@ -427,7 +427,7 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             }
             else if (!isPlayingLastState && inf.isPlaying)
             {
-                setBypassed(false);
+                setAutoBypassState(false);
             }
             isPlayingLastState = inf.isPlaying;
         }
@@ -451,7 +451,13 @@ void JucePluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         juce::AudioPluginInstance* plugin = hostedPlugin.get();
         plugin->prepareToPlay(getSampleRate(), bufLen);
-        plugin->processBlock(buffer,  scriptInitialized?TransformedMidiMessage:midiMessages);
+        juce::MidiBuffer& selectedBuffer = scriptInitialized ? TransformedMidiMessage : midiMessages;
+
+        for (auto e : selectedBuffer)
+        {
+            debugMessages.add(e.getMessage().getDescription());
+        }
+        plugin->processBlock(buffer, selectedBuffer);
     }
 
     if (debugOutputEnabled)

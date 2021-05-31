@@ -430,6 +430,82 @@ function init_utils()
 	function NoteInfoStr(nid)
 		return GetNoteName(NotesList[nid].NoteNum,8).."    id= "..StrFormatLen(nid,8).."type= "..NoteTypeNames[NotesList[nid].Type]
 	end
+
+	--Alt process type utilities
+	cc1_trs_sfz 		= 0 
+	cc1_trs_stac		= 0
+	cc1_trs_stctsm		= 0
+	cc1_trs_spicc		= 0
+
+	--TODO
+	function chk_cc1_sfz(cc1val)
+		return cc1val >= cc1_trs_sfz
+	end
+
+	function chk_cc1_stac(cc1val)
+		return cc1_trs_stac <= cc1val and cc1val < cc1_trs_sfz
+	end
+
+	function chk_cc1_stctsm(cc1val)
+		return cc1_trs_stctsm <= cc1val and cc1val < cc1_trs_stac
+	end	
+
+	function chk_cc1_spicc(cc1val)
+		return cc1val < cc1_trs_stctsm
+	end
+
+	shortNoteCC1TriageTable = {
+		[1] = { chk_cc1_spicc 	, 'shortSpicc'	},
+		[2]	= { chk_cc1_stac 	, 'shortStac'	},
+		[3] = { chk_cc1_stctsm	, 'shortStctsm'	},
+		[4] = { chk_cc1_sfz		, 'shortSfz'	}
+	}
+
+	primaryKsws = 
+	{
+		[NoteNum('c0')] 	= 'sustain',
+		[NoteNum('c#0')]	= 'mutesus',
+		[NoteNum('d0')]		= 'synctrem',
+		[NoteNum('d#0')]	= 'trillsus',
+		[NoteNum('e0')]		= 'tremsus',
+		[NoteNum('f0')]		= 'shortSfz',
+		[NoteNum('f#0')]	= 'marcato',
+		[NoteNum('g0')]		= 'rips'
+	}
+
+	techHasLgtVariant = 
+	{
+		[Techs.sustain] 	= true,
+		[Techs.legato]		= true,
+
+		[Techs.marcato]		= true,
+		[Techs.mlegato]		= true,
+
+		[Techs.tremsus]		= true,
+		[Techs.tremlgt]		= true,
+
+		[Techs.mutesus]		= true,
+		[Techs.muteleg]		= true,
+
+		[Techs.trillsus]	= true,
+		[Techs.trilllgt]	= true,
+	}
+
+	techIsVarilengthShort = 
+	{
+		[Techs.shortSfz]	= true,
+		[Techs.shortStac]	= true,
+		[Techs.shortStctsm] = true,
+		[Techs.shortSpicc]	= true,
+	}
+
+	secondaryKsws =
+	{
+		[NoteNum('bb0')] 	= 'legato_control'
+	}
+
+	lastUsedShortType = Techs.shortSfz
+
 end
 --===========================================================================================
 
@@ -553,81 +629,27 @@ function NoteEnterLengthPendingState(nid)	--return : int timerID
 	return tid 
 end
 
---TODO
-function chk_cc1_sfz()
-
-shortNoteCC1TriageTable = {
-	[1] = { chk_cc1_spicc 	, 'shortSpicc'	},
-	[2]	= { chk_cc1_stac 	, 'shortStac'	},
-	[3] = { chk_cc1_stctsm	, 'shortStctsm'	},
-	[4] = { chk_cc1_sfz		, 'shortSfz'	}
-}
-
-primaryKsws = 
-{
-	[NoteNum('c0')] 	= 'sustain',
-	[NoteNum('c#0')]	= 'mutesus',
-	[NoteNum('d0')]		= 'synctrem',
-	[NoteNum('d#0')]	= 'trillsus',
-	[NoteNum('e0')]		= 'tremsus',
-	[NoteNum('f0')]		= 'shortSfz',
-	[NoteNum('f#0')]	= 'marcato',
-	[NoteNum('g0')]		= 'rips'
-}
-
-techHasLgtVariant = 
-{
-	sustain 	= true,
-	legato		= true,
-
-	marcato 	= true,
-	mlegato		= true,
-
-	tremsus		= true,
-	tremlgt		= true,
-
-	mutesus		= true,
-	muteleg		= true,
-
-	trillsus	= true,
-	trilllgt	= true,
-}
-
-techIsVarilengthShort = 
-{
-	shortSfz	= true,
-	shortStac	= true,
-	shortStctsm = true,
-	shortSpicc	= true,
-}
-
-secondaryKsws =
-{
-	[NoteNum('bb0')] 	= 'legato_control'
-}
-
-lastUsedShortType = Techs.shortSfz
 
 --TODO
 function UpdateSelectedTech(isNote, control, val) -- isNote = false means control represents a CC
+	local updatedTech = CurrentSelectedTech
 	if isNote then
 		local newTech = primaryKsws[control]
 		if newTech ~= nil then --newTech exist in primaryKsws, means the note is a primary keyswitch
 			if newTech == 'shortSfz' then
-				CurrentSelectedTech = lastUsedShortType
-				return
-			else if newTech == 'synctrem' or newTech == 'rips' then
-				CurrentSelectedTech = newTech
+				updatedTech = lastUsedShortType
+			elseif newTech == 'synctrem' or newTech == 'rips' then
+				updatedTech = Techs[newTech]
 			else
-				CurrentSelectedTech = newTech
+				updatedTech = Techs[newTech]
 				if LegatoModeOn then
 					--Always make legato variant = primary + 1
-					CurrentSelectedTech = CurrentSelectedTech + 1
+					updatedTech = updatedTech + 1
 				end
 
 				--specially...
 				if newTech == 'mutesus' and val<64 then
-					CurrentSelectedTech = Techs.muteshrt
+					updatedTech = Techs.muteshrt
 				end
 			end
 		else --newTech is empty, this is a secondary keyswitch
@@ -640,9 +662,9 @@ function UpdateSelectedTech(isNote, control, val) -- isNote = false means contro
 				LegatoModeOn = newLgtModeOn
 				if techHasLgtVariant[CurrentSelectedTech] then
 					--Always make legato variant ODD, primary EVEN
-					CurrentSelectedTech = CurrentSelectedTech - CurrentSelectedTech & 1 --return to primary
+					updatedTech = CurrentSelectedTech - (CurrentSelectedTech & 1) --return to primary
 					if LegatoModeOn then
-						CurrentSelectedTech = CurrentSelectedTech + 1 --set legato variant
+						updatedTech = CurrentSelectedTech + 1 --set legato variant
 					end
 				end
 			end
@@ -650,12 +672,27 @@ function UpdateSelectedTech(isNote, control, val) -- isNote = false means contro
 
 	else
 		if control == 1 and techIsVarilengthShort[CurrentSelectedTech] then
+			local triageItem = Triage(shortNoteCC1TriageTable,val)
+			updatedTech = triageItem[2]
+			lastUsedShortType = triageItem[2]
 		end
+	end
+
+	if updatedTech ~= CurrentSelectedTech then
+		CurrentSelectedTech = updatedTech
+		DebugMessage("Technique Updated : ", CurrentSelectedTech)
 	end
 end
 
 --TODO
 function message_income(msgtype,control,value,assignid)
+
+	--always update technique state
+	if msgtype == CONTROLLER then
+		UpdateSelectedTech(false,control,value)
+	elseif msgtype == NOTEON then
+		UpdateSelectedTech(true,control,value)
+	end
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
 		--Process switches
@@ -670,15 +707,12 @@ function message_income(msgtype,control,value,assignid)
 				LastNote = -1
 			end
 		end
-
-		--always update technique state
-		if control == 1 then
-
-		end
-
+		
 		if isSwitches then
 			return
 		end
+		
+		PostMsg(msgtype,control,value,0)
 	end --return after switch is processed
 
 	if not TransformEnabled then --Bypassed, forward NoteOn NoteOff and Controllers

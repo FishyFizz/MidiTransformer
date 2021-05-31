@@ -235,36 +235,61 @@ function init_utils()
 
 	--Script Control Definition
 
+
+	ProcessingTypes = {
+		fixed		= 1, --fixed compensation at start
+		legato		= 2, --use legato type
+	}
+
 	--Always make legato variant = primary + 1
 	--Always make legato variant ODD, primary EVEN
 	--For reason, see UpdateSelectedTech()
-	Techs = {
-		sustain 	= 2,
-		legato		= 3,
+	--[[
 
-		shortSfz	= 4,
-		shortStac	= 5,
-		shortStctsm = 6,
-		shortSpicc	= 7,
+	Tech = {
+		int 		techId,
+		string 		techName,
+		int			processingType,
+		bool		isVarilengthShort,
 
-		marcato 	= 8,
-		mlegato		= 9,
-
-		tremsus		= 10,
-		tremlgt		= 11,
-
-		mutesus		= 12,
-		muteleg		= 13,
-		muteshrt	= 14,
-
-		trillsus	= 16,
-		trilllgt	= 17,
-
-		synctrem	= 18,
-
-		rips		= 19
+		string			primaryVariant,		--Only fill both of these two fields if the tech has OR is a legato variant
+		string			legatoVariant
 	}
-	CurrentSelectedTech 	= 0
+	]]
+
+	iTechId 		= 1
+	iTechName		= 2
+	iTechProcType 	= 3
+	iTechIsVarShrt	= 4
+	iTechPrimary	= 5
+	iTechLegato		= 6
+	Techs = {
+		sustain 	= { 2		,'sustain'		,ProcessingTypes.fixed		,false	,'sustain'	,'legato'	},
+		legato		= { 3		,'legato'		,ProcessingTypes.legato		,false	,'sustain'	,'legato'	},
+
+		shortSfz	= { 4		,'shortSfz'		,ProcessingTypes.fixed		,true	},
+		shortStac	= { 5		,'shortStac'	,ProcessingTypes.fixed		,true	},
+		shortStctsm = { 6		,'shortStctsm'	,ProcessingTypes.fixed		,true	},
+		shortSpicc	= { 7		,'shortSpicc'	,ProcessingTypes.fixed		,true	},
+
+		marcato 	= { 8		,'marcato'		,ProcessingTypes.fixed		,false	,'marcato'	,'mlegato'	},
+		mlegato		= { 9		,'mlegato'		,ProcessingTypes.legato		,false	,'marcato'	,'mlegato'	},
+
+		tremsus		= { 10		,'tremsus'		,ProcessingTypes.fixed		,false	,'tremsus'	,'tremlgt'	},
+		tremlgt		= { 11		,'tremlgt'		,ProcessingTypes.legato		,false	,'tremsus'	,'tremlgt'	},
+
+		mutesus		= { 12		,'mutesus'		,ProcessingTypes.fixed		,false	,'mutesus'	,'muteleg'	},
+		muteleg		= { 13		,'muteleg'		,ProcessingTypes.legato		,false	,'mutesus'	,'muteleg'	},
+		muteshrt	= { 14		,'muteshrt'		,ProcessingTypes.fixed		,false	},
+
+		trillsus	= { 16		,'trillsus'		,ProcessingTypes.fixed		,false	,'trillsus' ,'trilllgt' },
+		trilllgt	= { 17		,'trilllgt'		,ProcessingTypes.legato		,false	,'trillsus' ,'trilllgt' },
+
+		synctrem	= { 18		,'synctrem'		,ProcessingTypes.fixed		,false	},
+
+		rips		= { 19		,'rips'			,ProcessingTypes.fixed		,false	}
+	}
+	CurrentSelectedTech 	= 'legato'
 
 	EnableSwitchCtrl 		= 4
 	LegatoSwitchCtrl		= 5
@@ -432,9 +457,9 @@ function init_utils()
 	end
 
 	--Alt process type utilities
-	cc1_trs_sfz 		= 0 
-	cc1_trs_stac		= 0
-	cc1_trs_stctsm		= 0
+	cc1_trs_sfz 		= 96
+	cc1_trs_stac		= 64
+	cc1_trs_stctsm		= 32
 	cc1_trs_spicc		= 0
 
 	--TODO
@@ -473,38 +498,12 @@ function init_utils()
 		[NoteNum('g0')]		= 'rips'
 	}
 
-	techHasLgtVariant = 
-	{
-		[Techs.sustain] 	= true,
-		[Techs.legato]		= true,
-
-		[Techs.marcato]		= true,
-		[Techs.mlegato]		= true,
-
-		[Techs.tremsus]		= true,
-		[Techs.tremlgt]		= true,
-
-		[Techs.mutesus]		= true,
-		[Techs.muteleg]		= true,
-
-		[Techs.trillsus]	= true,
-		[Techs.trilllgt]	= true,
-	}
-
-	techIsVarilengthShort = 
-	{
-		[Techs.shortSfz]	= true,
-		[Techs.shortStac]	= true,
-		[Techs.shortStctsm] = true,
-		[Techs.shortSpicc]	= true,
-	}
-
 	secondaryKsws =
 	{
 		[NoteNum('bb0')] 	= 'legato_control'
 	}
 
-	lastUsedShortType = Techs.shortSfz
+	lastUsedShortType = Techs.shortSfz[iTechName]
 
 end
 --===========================================================================================
@@ -631,40 +630,42 @@ end
 
 
 --TODO
-function UpdateSelectedTech(isNote, control, val) -- isNote = false means control represents a CC
+function UpdateSelectedTech(isNote, control, val) -- return true if the note should be bypassed
 	local updatedTech = CurrentSelectedTech
+	local isKswNote = false
 	if isNote then
-		local newTech = primaryKsws[control]
-		if newTech ~= nil then --newTech exist in primaryKsws, means the note is a primary keyswitch
-			if newTech == 'shortSfz' then
+		local newTechName = primaryKsws[control]
+		if newTechName ~= nil then --newTechName exist in primaryKsws, means the note is a primary keyswitch
+			isKswNote = true
+			if newTechName == 'shortSfz' then
 				updatedTech = lastUsedShortType
-			elseif newTech == 'synctrem' or newTech == 'rips' then
-				updatedTech = Techs[newTech]
+			elseif Techs[newTechName][iTechLegato] == nil then
+				updatedTech = Techs[newTechName][iTechName]
 			else
-				updatedTech = Techs[newTech]
 				if LegatoModeOn then
-					--Always make legato variant = primary + 1
-					updatedTech = updatedTech + 1
+					updatedTech = Techs[newTechName][iTechLegato]
+				else
+					updatedTech = Techs[newTechName][iTechPrimary]
 				end
-
+				
 				--specially...
-				if newTech == 'mutesus' and val<64 then
-					updatedTech = Techs.muteshrt
+				if newTechName == 'mutesus' and val<64 then
+					updatedTech = Techs.muteshrt[iTechName]
 				end
 			end
-		else --newTech is empty, this is a secondary keyswitch
+		else --newTechName is empty, this is a secondary keyswitch
 			local secondaryType = secondaryKsws[control]
 			if secondaryType == 'legato_control' then
+				isKswNote = true
 				local newLgtModeOn = BoolController(val)
-				if newLgtModeOn == LegatoModeOn then
-					return --nothing changed, skip
-				end
-				LegatoModeOn = newLgtModeOn
-				if techHasLgtVariant[CurrentSelectedTech] then
-					--Always make legato variant ODD, primary EVEN
-					updatedTech = CurrentSelectedTech - (CurrentSelectedTech & 1) --return to primary
-					if LegatoModeOn then
-						updatedTech = CurrentSelectedTech + 1 --set legato variant
+				if newLgtModeOn ~= LegatoModeOn then --skip if nothing changed
+					LegatoModeOn = newLgtModeOn
+					if Techs[CurrentSelectedTech][iTechLegato] ~= nil then
+						if LegatoModeOn then
+							updatedTech = Techs[CurrentSelectedTech][iTechLegato]
+						else
+							updatedTech = Techs[CurrentSelectedTech][iTechPrimary]
+						end
 					end
 				end
 			end
@@ -682,16 +683,28 @@ function UpdateSelectedTech(isNote, control, val) -- isNote = false means contro
 		CurrentSelectedTech = updatedTech
 		DebugMessage("Technique Updated : ", CurrentSelectedTech)
 	end
+
+	if isKswNote then
+		return true
+	end
 end
 
 --TODO
 function message_income(msgtype,control,value,assignid)
 
-	--always update technique state
+	--always update technique state, and bypass all keyswitch related notes
 	if msgtype == CONTROLLER then
 		UpdateSelectedTech(false,control,value)
 	elseif msgtype == NOTEON then
-		UpdateSelectedTech(true,control,value)
+		if UpdateSelectedTech(true,control,value) then
+			PostMsg(msgtype,control,value,0)
+			return
+		end
+	elseif msgtype == NOTEOFF then
+		if primaryKsws[control] or secondaryKsws[control] then
+			PostMsg(msgtype,control,value,0)
+			return
+		end
 	end
 
 	if msgtype == CONTROLLER --[[and control is one of the switches]] then
